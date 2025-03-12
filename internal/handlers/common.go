@@ -1,8 +1,6 @@
 package handlers
 
-import "fmt"
-
-// findVerifiedParticipant ищет участника по факультету, группе и введённому коду.
+// FindVerifiedParticipant экспортированная функция для поиска верифицированного участника.
 func FindVerifiedParticipant(faculty, group, pass string) (*VerifiedParticipant, bool) {
 	for _, vp := range verifiedParticipants {
 		if vp.Faculty == faculty && vp.Group == group && vp.Pass == pass {
@@ -10,9 +8,4 @@ func FindVerifiedParticipant(faculty, group, pass string) (*VerifiedParticipant,
 		}
 	}
 	return nil, false
-}
-
-// debugPrint – вспомогательная функция для отладки.
-func debugPrint(msg string) {
-	fmt.Println(msg)
 }

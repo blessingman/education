@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"fmt"
+	"regexp"
 
 	"education/internal/auth"
 	"education/internal/models"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // processRegistrationMessage обрабатывает текстовые сообщения для регистрации.
@@ -24,6 +26,12 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 			bot.Send(tgbotapi.NewMessage(chatID, "Ошибка: факультет или группа не выбраны."))
 			return
 		}
+		// Простейшая валидация регистрационного кода: минимум 3 символа
+		if len(text) < 3 {
+			bot.Send(tgbotapi.NewMessage(chatID, "Регистрационный код слишком короткий."))
+			return
+		}
+		// Используем экспортированную функцию из common.go
 		vp, found := FindVerifiedParticipant(tempData.Faculty, tempData.Group, text)
 		if !found {
 			bot.Send(tgbotapi.NewMessage(chatID, "Неверный регистрационный код. Попробуйте ещё раз:"))
@@ -31,11 +39,29 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 		}
 		tempData.Verified = vp
 		userStates[chatID] = StateWaitingForPassword
-		bot.Send(tgbotapi.NewMessage(chatID, "Регистрационный код принят. Установите, пожалуйста, ваш новый пароль:"))
+		bot.Send(tgbotapi.NewMessage(chatID, "Регистрационный код принят. Установите, пожалуйста, ваш новый пароль (минимум 6 символов, допускаются спецсимволы):"))
 		return
+
 	case StateWaitingForPassword:
+		// Валидация пароля: минимум 6 символов (расширить по необходимости)
+		if len(text) < 6 {
+			bot.Send(tgbotapi.NewMessage(chatID, "Пароль слишком короткий."))
+			return
+		}
+		// Дополнительно можно проверить наличие цифр, спецсимволов и т.д.
+		re := regexp.MustCompile(`[A-Za-z0-9!@#\$%\^&\*]+`)
+		if !re.MatchString(text) {
+			bot.Send(tgbotapi.NewMessage(chatID, "Пароль содержит недопустимые символы."))
+			return
+		}
 		if tempData.Verified == nil {
 			bot.Send(tgbotapi.NewMessage(chatID, "Ошибка регистрации. Попробуйте снова."))
+			return
+		}
+		// Хэшируем пароль с использованием bcrypt.
+		hashed, err := bcrypt.GenerateFromPassword([]byte(text), bcrypt.DefaultCost)
+		if err != nil {
+			bot.Send(tgbotapi.NewMessage(chatID, "Ошибка обработки пароля. Попробуйте позже."))
 			return
 		}
 		vp := tempData.Verified
@@ -44,7 +70,7 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 			Role:             vp.Role,
 			Name:             vp.FIO,
 			Group:            vp.Group,
-			Password:         text,
+			Password:         string(hashed),
 			RegistrationCode: vp.Pass,
 		}
 		auth.SaveUser(newUser)

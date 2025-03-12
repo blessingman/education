@@ -1,46 +1,33 @@
 package handlers
 
-// ------------------------------
-//
-//	Константы состояний регистрации
-//
-// ------------------------------
 const (
+	// Состояния регистрации
 	StateWaitingForFaculty  = "waiting_for_faculty"
 	StateWaitingForGroup    = "waiting_for_group"
-	StateWaitingForPass     = "waiting_for_pass"     // ввод регистрационного кода (пропуска)
+	StateWaitingForPass     = "waiting_for_pass"     // ввод регистрационного кода
 	StateWaitingForPassword = "waiting_for_password" // установка нового пароля
-)
 
-// ------------------------------
-//
-//	Константы состояний входа (логин)
-//
-// ------------------------------
-const (
+	// Состояния входа (логин)
 	LoginStateWaitingForRegCode  = "login_waiting_for_regcode"
 	LoginStateWaitingForPassword = "login_waiting_for_password"
 )
-
-// ------------------------------
-//  Типы и глобальные переменные
-// ------------------------------
 
 // VerifiedParticipant описывает верифицированного участника.
 type VerifiedParticipant struct {
 	FIO     string // ФИО
 	Faculty string // Факультет
-	Group   string // Группа (например, "AA-25-07")
-	Pass    string // Регистрационный код (например, "ST-456", "TR-345", "AD-314")
+	Group   string // Группа
+	Pass    string // Регистрационный код (например, "ST-456")
 	Role    string // Роль: "student", "teacher", "admin"
 }
 
 // loginData хранит временные данные для входа.
 type loginData struct {
 	RegCode string
+	MsgIDs  []int
 }
 
-// Список верифицированных участников.
+// Список верифицированных участников (обычно обновляется через административный интерфейс).
 var verifiedParticipants = map[string]VerifiedParticipant{
 	"Иван Иванов":       {FIO: "Иван Иванов", Faculty: "Факультет Информатики", Group: "AA-25-07", Pass: "ST-456", Role: "student"},
 	"Петр Петров":       {FIO: "Петр Петров", Faculty: "Факультет Механики", Group: "BB-10-07", Pass: "TR-345", Role: "teacher"},
@@ -69,10 +56,9 @@ type tempUserData struct {
 	Verified *VerifiedParticipant
 }
 
-// Глобальные переменные для регистрации.
+// Глобальные переменные для регистрации и входа.
 var userStates = make(map[int64]string)
 var userTempDataMap = make(map[int64]*tempUserData)
 
-// Глобальные переменные для входа.
 var loginStates = make(map[int64]string)
 var loginTempDataMap = make(map[int64]*loginData)
