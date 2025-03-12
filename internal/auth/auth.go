@@ -8,8 +8,10 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// SaveUser сохраняет пользователя в двух маппингах: по TelegramID и по RegistrationCode.
 func SaveUser(u *models.User) {
 	models.UsersMap[u.TelegramID] = u
+	models.UsersByRegCode[u.RegistrationCode] = u
 }
 
 // RegisterUser регистрирует пользователя с ролью "student" по умолчанию.
