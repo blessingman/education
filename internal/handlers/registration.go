@@ -4,12 +4,11 @@ import (
 	"fmt"
 
 	"education/internal/auth"
-	"education/internal/models"
-
+	// пакет, где GetAllFaculties / GetGroupsByFaculty
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// processRegistrationMessage обрабатывает текстовые сообщения для регистрации.
+// processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации (после выбора группы).
 func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, text string) {
 	chatID := update.Message.Chat.ID
 	tempData, ok := userTempDataMap[chatID]
@@ -19,76 +18,63 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 	}
 
 	switch state {
+
 	case StateWaitingForPass:
+		// Пользователь вводит registration_code
 		if tempData.Faculty == "" || tempData.Group == "" {
 			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка: факультет или группа не выбраны."))
 			return
 		}
-		vp, found := FindVerifiedParticipant(tempData.Faculty, tempData.Group, text)
-		if !found {
-			bot.Send(tgbotapi.NewMessage(chatID, "❌ Неверный регистрационный код. Попробуйте ещё раз:"))
+		// Ищем «seed»-пользователя (telegram_id=0) в БД, у которого group_name=? registration_code=?
+		userInDB, err := auth.FindUnregisteredUser(tempData.Faculty, tempData.Group, text)
+		if err != nil {
+			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при поиске в БД. Попробуйте позже."))
 			return
 		}
-		tempData.Verified = vp
+		if userInDB == nil {
+			bot.Send(tgbotapi.NewMessage(chatID, "❌ Неверный пропуск (регистрационный код). Попробуйте ещё раз."))
+			return
+		}
+		tempData.FoundUserID = userInDB.ID // Запоминаем ID
+
 		userStates[chatID] = StateWaitingForPassword
-		bot.Send(tgbotapi.NewMessage(chatID, "✅ Регистрационный код принят. Установите, пожалуйста, ваш новый пароль:"))
+		bot.Send(tgbotapi.NewMessage(chatID, "✅ Код принят. Теперь введите ваш новый пароль:"))
 		return
 
 	case StateWaitingForPassword:
-		if tempData.Verified == nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка регистрации. Попробуйте снова."))
+		// На этом шаге пользователь вводит пароль
+		if tempData.FoundUserID == 0 {
+			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка регистрации. Начните заново /register."))
 			return
 		}
-		vp := tempData.Verified
-		newUser := &models.User{
-			TelegramID:       chatID,
-			Role:             vp.Role,
-			Name:             vp.FIO,
-			Group:            vp.Group,
-			Password:         text,
-			RegistrationCode: vp.Pass,
+		userInDB, err := auth.GetUserByID(tempData.FoundUserID)
+		if err != nil || userInDB == nil {
+			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Пользователь не найден (возможно, уже зарегистрирован)."))
+			return
 		}
-		auth.SaveUser(newUser)
-		finalMsg := fmt.Sprintf("🎉 Регистрация завершена!\n\n👤 ФИО: %s\n🏫 Факультет: %s\n📚 Группа: %s\n🔑 Роль: %s", newUser.Name, vp.Faculty, newUser.Group, vp.Role)
+		userInDB.TelegramID = chatID
+		userInDB.Password = text
+		if err := auth.SaveUser(userInDB); err != nil {
+			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже."))
+			return
+		}
+
+		finalMsg := fmt.Sprintf(
+			"🎉 Регистрация завершена!\n\n👤 ФИО: %s\n🏫 Факультет: %s\n📚 Группа: %s\n🔑 Роль: %s",
+			userInDB.Name, // Предполагаем, что faculty хранить в userInDB не нужно
+			tempData.Faculty,
+			userInDB.Group,
+			userInDB.Role,
+		)
 		bot.Send(tgbotapi.NewMessage(chatID, finalMsg))
+
 		delete(userStates, chatID)
 		delete(userTempDataMap, chatID)
 		return
 	}
 }
 
-// sendFacultySelection отправляет инлайн-клавиатуру для выбора факультета.
-func sendFacultySelection(chatID int64, bot *tgbotapi.BotAPI) {
-	var rows [][]tgbotapi.InlineKeyboardButton
-	for faculty := range faculties {
-		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(faculty, faculty),
-		))
-	}
-	msg := tgbotapi.NewMessage(chatID, "📚 Выберите ваш факультет:")
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
-	bot.Send(msg)
-}
-
-// sendGroupSelection отправляет инлайн-клавиатуру для выбора группы для выбранного факультета.
-func sendGroupSelection(chatID int64, faculty string, bot *tgbotapi.BotAPI) {
-	groups, exists := faculties[faculty]
-	if !exists {
-		bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Факультет не найден."))
-		return
-	}
-	var rows [][]tgbotapi.InlineKeyboardButton
-	for _, group := range groups {
-		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(group, group),
-		))
-	}
-	msg := tgbotapi.NewMessage(chatID, "📖 Выберите вашу группу:")
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
-	bot.Send(msg)
-}
-
-// RegistrationProcessCallback обрабатывает callback-запросы для регистрации.
+// RegistrationProcessCallback — обрабатывает callback-и при выборе факультета / группы.
 func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	chatID := callback.Message.Chat.ID
 	data := callback.Data
@@ -96,47 +82,74 @@ func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi
 	if state, exists := userStates[chatID]; exists {
 		switch state {
 		case StateWaitingForFaculty:
-			// Сохраняем выбранный факультет
+			// Выбран факультет
 			userTempDataMap[chatID].Faculty = data
-			// Переходим к выбору группы
 			userStates[chatID] = StateWaitingForGroup
 
-			// Ответ на callback (необязательно, но даёт визуальную обратную связь)
-			bot.Request(tgbotapi.NewCallback(
-				callback.ID,
-				fmt.Sprintf("✅ Факультет '%s' выбран", data),
-			))
-
-			// Вызываем функцию отправки клавиатуры с группами
+			bot.Request(tgbotapi.NewCallback(callback.ID, fmt.Sprintf("✅ Факультет '%s' выбран", data)))
+			// Просим выбрать группу
 			sendGroupSelection(chatID, data, bot)
 			return
 
 		case StateWaitingForGroup:
-			// Сохраняем выбранную группу
+			// Выбрана группа
 			userTempDataMap[chatID].Group = data
-			// Переходим к этапу ввода кода
 			userStates[chatID] = StateWaitingForPass
 
-			// Ответ на callback
-			bot.Request(tgbotapi.NewCallback(
-				callback.ID,
-				fmt.Sprintf("✅ Группа '%s' выбрана", data),
-			))
-
-			// Выводим подсказку о выбранном факультете и группе
-			faculty := userTempDataMap[chatID].Faculty
-			group := userTempDataMap[chatID].Group
-
-			// Сообщение: напоминаем пользователю, что он выбрал, и просим ввести код
-			messageText := fmt.Sprintf(
-				"Вы выбрали факультет: %s\nГруппа: %s\n\n"+
-					"Пожалуйста, введите ваш регистрационный код (например, ST-456), убедившись, что он принадлежит именно этой группе.",
-				faculty,
-				group,
-			)
-
-			bot.Send(tgbotapi.NewMessage(chatID, messageText))
+			bot.Request(tgbotapi.NewCallback(callback.ID, fmt.Sprintf("✅ Группа '%s' выбрана", data)))
+			bot.Send(tgbotapi.NewMessage(chatID, "🔐 Введите ваш регистрационный код (например, ST-456):"))
 			return
 		}
 	}
+}
+
+// sendFacultySelection — отправляет inline-кнопки факультетов из БД
+func sendFacultySelection(chatID int64, bot *tgbotapi.BotAPI) {
+	// Считываем из базы
+	faculties, err := GetAllFaculties()
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка чтения факультетов из БД."))
+		return
+	}
+	if len(faculties) == 0 {
+		bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Нет факультетов в базе."))
+		return
+	}
+
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for _, f := range faculties {
+		row := tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(f, f),
+		)
+		rows = append(rows, row)
+	}
+
+	msg := tgbotapi.NewMessage(chatID, "📚 Выберите ваш факультет:")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+	bot.Send(msg)
+}
+
+// sendGroupSelection — отправляет inline-кнопки групп данного факультета
+func sendGroupSelection(chatID int64, facultyName string, bot *tgbotapi.BotAPI) {
+	groups, err := GetGroupsByFaculty(facultyName)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка чтения групп из БД."))
+		return
+	}
+	if len(groups) == 0 {
+		bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Нет групп для факультета "+facultyName+"."))
+		return
+	}
+
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for _, g := range groups {
+		row := tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(g, g),
+		)
+		rows = append(rows, row)
+	}
+
+	msg := tgbotapi.NewMessage(chatID, "📖 Выберите вашу группу:")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+	bot.Send(msg)
 }

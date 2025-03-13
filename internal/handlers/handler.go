@@ -1,15 +1,18 @@
 package handlers
 
 import (
-	"education/internal/models"
+	"education/internal/auth"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // ProcessMessage — основной обработчик входящих сообщений.
-// Делегирует обработку регистрации и входа соответствующим функциям.
-// Также добавлена логика проверки: если пользователь уже зарегистрирован или залогинен, команды /register и /login выдадут сообщение.
+// Делегирует регистрацию и вход, проверяет "в системе" через базу.
+// ProcessMessage — основной обработчик входящих сообщений.
+// 1) Проверяет, не находимся ли мы в процессе входа/регистрации (loginStates / userStates).
+// 2) Если пользователь уже "в системе" (user != nil), обрабатывает /logout.
+// 3) Если пользователь не в системе, обрабатывает /register /login.
 func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	if update.Message == nil {
 		return
@@ -17,9 +20,7 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	chatID := update.Message.Chat.ID
 	text := strings.TrimSpace(update.Message.Text)
 
-	// ----------------------
-	// 1. Если пользователь в процессе входа
-	// ----------------------
+	// A. Проверка: не в процессе ли логина?
 	if state, ok := loginStates[chatID]; ok {
 		// Разрешаем только /cancel
 		if update.Message.IsCommand() {
@@ -28,19 +29,15 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 				delete(loginTempDataMap, chatID)
 				bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс входа отменён."))
 			} else {
-				// Любая другая команда — запрещаем
 				bot.Send(tgbotapi.NewMessage(chatID, "Вы уже в процессе входа. Используйте /cancel, чтобы отменить."))
 			}
 			return
 		}
-		// Если это не команда, продолжаем процесс входа
 		processLoginMessage(update, bot, state, text)
 		return
 	}
 
-	// ----------------------
-	// 2. Если пользователь в процессе регистрации
-	// ----------------------
+	// B. Проверка: не в процессе ли регистрации?
 	if state, ok := userStates[chatID]; ok {
 		// Разрешаем только /cancel
 		if update.Message.IsCommand() {
@@ -49,20 +46,23 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 				delete(userTempDataMap, chatID)
 				bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс регистрации отменён."))
 			} else {
-				// Любая другая команда — запрещаем
 				bot.Send(tgbotapi.NewMessage(chatID, "Вы уже в процессе регистрации. Используйте /cancel, чтобы отменить."))
 			}
 			return
 		}
-		// Если это не команда, продолжаем процесс регистрации
 		processRegistrationMessage(update, bot, state, text)
 		return
 	}
 
-	// ----------------------
-	// 3. Если пользователь уже в системе (зарегистрирован и вошёл)
-	// ----------------------
-	if _, registered := models.UsersMap[chatID]; registered {
+	// C. Проверка: пользователь "в системе"?
+	user, err := auth.GetUserByTelegramID(chatID)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка чтения пользователя из базы. Попробуйте позже."))
+		return
+	}
+
+	if user != nil {
+		// Уже в системе
 		if update.Message.IsCommand() {
 			switch update.Message.Command() {
 			case "register":
@@ -70,7 +70,9 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 			case "login":
 				bot.Send(tgbotapi.NewMessage(chatID, "❌ Вы уже вошли в систему. Используйте /logout, чтобы выйти."))
 			case "logout":
-				delete(models.UsersMap, chatID)
+				// Вышли → telegram_id=0
+				user.TelegramID = 0
+				_ = auth.SaveUser(user) // при желании обработайте ошибку
 				bot.Send(tgbotapi.NewMessage(chatID, "✅ Вы успешно вышли из системы."))
 			case "cancel":
 				bot.Send(tgbotapi.NewMessage(chatID, "ℹ Нечего отменять, вы уже в системе. Используйте /logout, если хотите выйти."))
@@ -78,15 +80,13 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 				bot.Send(tgbotapi.NewMessage(chatID, "🤷 Команда не распознана или ещё не реализована."))
 			}
 		} else {
-			// Любые некомандные сообщения можно либо игнорировать, либо дать подсказку
+			// не команда → можем подсказать
 			bot.Send(tgbotapi.NewMessage(chatID, "ℹ Вы уже в системе. Используйте /logout, чтобы выйти, или другие команды."))
 		}
 		return
 	}
 
-	// ----------------------
-	// 4. Если пользователь не в процессе и не в системе
-	// ----------------------
+	// D. Пользователь не в системе
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
 		case "start":
@@ -111,8 +111,7 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	}
 }
 
-// ProcessCallback — основной обработчик callback‑запросов.
-// Делегирует обработку callback-ов функции RegistrationProcessCallback.
+// ProcessCallback — обрабатывает callback‑запросы инлайн-кнопок (выбор факультета/группы).
 func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	RegistrationProcessCallback(callback, bot)
 }

@@ -1,47 +1,120 @@
 package auth
 
 import (
-	"strings"
+	"database/sql"
+	"fmt"
 
+	"education/internal/db"
 	"education/internal/models"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// SaveUser сохраняет пользователя в двух маппингах: по TelegramID и по RegistrationCode.
-func SaveUser(u *models.User) {
-	models.UsersMap[u.TelegramID] = u
-	models.UsersByRegCode[u.RegistrationCode] = u
+// SaveUser записывает / обновляет пользователя (по id).
+func SaveUser(u *models.User) error {
+	_, err := db.DB.Exec(`
+		INSERT INTO users (id, telegram_id, role, name, group_name, password, registration_code)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			telegram_id = excluded.telegram_id,
+			role = excluded.role,
+			name = excluded.name,
+			group_name = excluded.group_name,
+			password = excluded.password,
+			registration_code = excluded.registration_code
+	`,
+		u.ID,
+		u.TelegramID,
+		u.Role,
+		u.Name,
+		u.Group,
+		u.Password,
+		u.RegistrationCode,
+	)
+	if err != nil {
+		return fmt.Errorf("SaveUser: %w", err)
+	}
+	return nil
 }
 
-// RegisterUser регистрирует пользователя с ролью "student" по умолчанию.
-// Ожидается ввод данных в формате: /register Имя;Группа
-func RegisterUser(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
-	args := strings.TrimSpace(update.Message.CommandArguments())
-	if args == "" {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Пожалуйста, введите данные в формате: Имя;Группа")
-		bot.Send(msg)
-		return
+// FindUnregisteredUser ищет пользователя (telegram_id=0) по group_name / registration_code
+func FindUnregisteredUser(faculty, group, pass string) (*models.User, error) {
+	row := db.DB.QueryRow(`
+		SELECT id, telegram_id, role, name, group_name, password, registration_code
+		FROM users
+		WHERE group_name = ?
+		  AND registration_code = ?
+		  AND telegram_id = 0
+	`, group, pass)
+
+	var u models.User
+	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Group, &u.Password, &u.RegistrationCode)
+	if err == sql.ErrNoRows {
+		return nil, nil
 	}
-
-	parts := strings.Split(args, ";")
-	if len(parts) < 2 {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неверный формат. Используйте: Имя;Группа")
-		bot.Send(msg)
-		return
+	if err != nil {
+		return nil, err
 	}
-
-	name := strings.TrimSpace(parts[0])
-	group := strings.TrimSpace(parts[1])
-
-	// Сохраняем пользователя с ролью "student" по умолчанию.
-	models.UsersMap[update.Message.Chat.ID] = &models.User{
-		TelegramID: update.Message.Chat.ID,
-		Role:       "student",
-		Group:      group,
-		Name:       name,
-	}
-
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Регистрация прошла успешно! Добро пожаловать, "+name)
-	bot.Send(msg)
+	// Проверить faculty? — если хотите сверять faculty=group_name? Или хранить faculty отдельно?
+	// Это зависит от структуры
+	return &u, nil
 }
+
+// GetUserByTelegramID проверяет, есть ли пользователь с данным telegram_id
+func GetUserByTelegramID(telegramID int64) (*models.User, error) {
+	row := db.DB.QueryRow(`
+		SELECT id, telegram_id, role, name, group_name, password, registration_code
+		FROM users
+		WHERE telegram_id = ?
+	`, telegramID)
+	var u models.User
+	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Group, &u.Password, &u.RegistrationCode)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("GetUserByTelegramID: %w", err)
+	}
+	return &u, nil
+}
+
+// DeleteUserByTelegramID => /logout
+func DeleteUserByTelegramID(telegramID int64) error {
+	_, err := db.DB.Exec(`DELETE FROM users WHERE telegram_id=?`, telegramID)
+	return err
+}
+
+// GetUserByRegCode ищет пользователя (telegram_id != 0 или 0) по registration_code
+func GetUserByRegCode(regCode string) (*models.User, error) {
+	row := db.DB.QueryRow(`
+		SELECT id, telegram_id, role, name, group_name, password, registration_code
+		FROM users
+		WHERE registration_code = ?
+	`, regCode)
+	var u models.User
+	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Group, &u.Password, &u.RegistrationCode)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("GetUserByRegCode: %w", err)
+	}
+	return &u, nil
+}
+
+func GetUserByID(id int64) (*models.User, error) {
+	row := db.DB.QueryRow(`
+		SELECT id, telegram_id, role, name, group_name, password, registration_code
+		FROM users
+		WHERE id = ?
+	`, id)
+	var u models.User
+	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Group, &u.Password, &u.RegistrationCode)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("GetUserByID: %w", err)
+	}
+	return &u, nil
+}
+
+// FindUnregisteredUser ищет запись (telegram_id=0) для faculty/group/pass

@@ -1,17 +1,12 @@
 package models
 
-// User хранит информацию о пользователе.
+// User — одна таблица, хранит и "seed"-участников (telegram_id=0) и реальных.
 type User struct {
-	TelegramID       int64  // Идентификатор чата в Telegram
-	Role             string // Роль: "student", "teacher", "admin"
-	Group            string // Название группы
-	Name             string // ФИО пользователя
-	Password         string // Пароль (хранится в открытом виде; в реальном проекте — в зашифрованном виде)
-	RegistrationCode string // Регистрационный код (пропуск)
+	ID               int64 // PRIMARY KEY AUTOINCREMENT
+	TelegramID       int64
+	Role             string
+	Name             string
+	Group            string
+	Password         string
+	RegistrationCode string
 }
-
-// UsersMap — глобальное хранилище пользователей по TelegramID.
-var UsersMap = make(map[int64]*User)
-
-// UsersByRegCode — глобальное хранилище пользователей по RegistrationCode.
-var UsersByRegCode = make(map[string]*User)
