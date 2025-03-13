@@ -1,8 +1,10 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"log"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -15,34 +17,40 @@ func InitDB(dbFile string) {
 	if err != nil {
 		log.Panicf("Ошибка открытия SQLite: %v", err)
 	}
+	// Настраиваем пул соединений (опционально)
+	DB.SetMaxOpenConns(10)
+	DB.SetMaxIdleConns(5)
 	createTables()
 }
 
 func createTables() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	// Таблица users
-	_, err := DB.Exec(`
-	CREATE TABLE IF NOT EXISTS users (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		telegram_id INTEGER,           -- 0, если не привязан
-		role TEXT,
-		name TEXT,
-		group_name TEXT,
-		password TEXT,
-		registration_code TEXT UNIQUE  -- код (ST-456 и т.д.) уникален
-	);
-	`)
+	_, err := DB.ExecContext(ctx, `
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER,
+            role TEXT,
+            name TEXT,
+            group_name TEXT,
+            password TEXT,
+            registration_code TEXT UNIQUE
+        );
+    `)
 	if err != nil {
 		log.Panicf("Ошибка создания таблицы users: %v", err)
 	}
 
 	// Таблица faculty_groups
-	_, err = DB.Exec(`
-	CREATE TABLE IF NOT EXISTS faculty_groups (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		faculty TEXT,
-		group_name TEXT
-	);
-	`)
+	_, err = DB.ExecContext(ctx, `
+        CREATE TABLE IF NOT EXISTS faculty_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faculty TEXT,
+            group_name TEXT
+        );
+    `)
 	if err != nil {
 		log.Panicf("Ошибка создания таблицы faculty_groups: %v", err)
 	}
