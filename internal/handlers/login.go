@@ -25,7 +25,7 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 
 	switch state {
 	case LoginStateWaitingForRegCode:
-		// Пользователь вводит код (ST-456 и т.п.)
+		// Пользователь вводит код (например, ST-456)
 		ld.RegCode = text
 		loginStates[chatID] = LoginStateWaitingForPassword
 
@@ -36,14 +36,13 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 		// Пользователь вводит пароль
 		regCode := ld.RegCode
 
-		// Ищем запись пользователя в базе по коду
+		// Ищем пользователя в БД по коду
 		user, err := auth.GetUserByRegCode(regCode)
 		if err != nil {
 			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка чтения из БД. Попробуйте позже."))
 			return
 		}
 		if user == nil {
-			// Не нашли запись с таким кодом
 			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Пользователь с таким пропуском не найден."))
 			return
 		}
@@ -54,7 +53,7 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 			return
 		}
 
-		// Если всё хорошо, «привязываем» этого пользователя к текущему чату (telegram_id)
+		// Привязываем пользователя к текущему чату (устанавливаем telegram_id)
 		user.TelegramID = chatID
 		if err := auth.SaveUser(user); err != nil {
 			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже."))
@@ -63,7 +62,10 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 
 		bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("🎉 Вход выполнен успешно! Добро пожаловать, %s", user.Name)))
 
-		// Сбрасываем состояние логина
+		// Вместо sendLoggedInMenu используем sendMainMenu напрямую:
+		sendMainMenu(chatID, bot, user)
+
+		// Сбрасываем логин-состояния
 		delete(loginStates, chatID)
 		delete(loginTempDataMap, chatID)
 		return

@@ -69,6 +69,10 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 		)
 		bot.Send(tgbotapi.NewMessage(chatID, finalMsg))
 
+		// Вместо sendLoggedInMenu вызываем sendMainMenu напрямую с переданным пользователем:
+		sendMainMenu(chatID, bot, userInDB)
+
+		// Сбрасываем временные данные
 		delete(userStates, chatID)
 		delete(userTempDataMap, chatID)
 		return

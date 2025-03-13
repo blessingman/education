@@ -2,17 +2,45 @@ package handlers
 
 import (
 	"education/internal/auth"
+	"education/internal/models"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// sendMainMenu отправляет меню, которое зависит от того, авторизован пользователь или нет.
+func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	if user == nil {
+		// Пользователь не авторизован → показываем «Регистрация» и «Вход»
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Регистрация", "menu_register"),
+			tgbotapi.NewInlineKeyboardButtonData("Вход", "menu_login"),
+		))
+	} else {
+		// Пользователь авторизован → показываем «Расписание», «Материалы» и «Выход»
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Расписание", "menu_schedule"),
+			tgbotapi.NewInlineKeyboardButtonData("Материалы", "menu_materials"),
+		))
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Выход", "menu_logout"),
+		))
+	}
+
+	// «Справка» доступна всем
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("Справка", "menu_help"),
+	))
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
+	msg := tgbotapi.NewMessage(chatID, "Выберите действие:")
+	msg.ReplyMarkup = keyboard
+	bot.Send(msg)
+}
+
 // ProcessMessage — основной обработчик входящих сообщений.
-// Делегирует регистрацию и вход, проверяет "в системе" через базу.
-// ProcessMessage — основной обработчик входящих сообщений.
-// 1) Проверяет, не находимся ли мы в процессе входа/регистрации (loginStates / userStates).
-// 2) Если пользователь уже "в системе" (user != nil), обрабатывает /logout.
-// 3) Если пользователь не в системе, обрабатывает /register /login.
 func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	if update.Message == nil {
 		return
@@ -22,96 +50,108 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 
 	// A. Проверка: не в процессе ли логина?
 	if state, ok := loginStates[chatID]; ok {
-		// Разрешаем только /cancel
-		if update.Message.IsCommand() {
-			if update.Message.Command() == "cancel" {
-				delete(loginStates, chatID)
-				delete(loginTempDataMap, chatID)
-				bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс входа отменён."))
-			} else {
-				bot.Send(tgbotapi.NewMessage(chatID, "Вы уже в процессе входа. Используйте /cancel, чтобы отменить."))
-			}
-			return
-		}
 		processLoginMessage(update, bot, state, text)
 		return
 	}
 
 	// B. Проверка: не в процессе ли регистрации?
 	if state, ok := userStates[chatID]; ok {
-		// Разрешаем только /cancel
-		if update.Message.IsCommand() {
-			if update.Message.Command() == "cancel" {
-				delete(userStates, chatID)
-				delete(userTempDataMap, chatID)
-				bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс регистрации отменён."))
-			} else {
-				bot.Send(tgbotapi.NewMessage(chatID, "Вы уже в процессе регистрации. Используйте /cancel, чтобы отменить."))
-			}
-			return
-		}
 		processRegistrationMessage(update, bot, state, text)
 		return
 	}
 
-	// C. Проверка: пользователь "в системе"?
+	// C. Проверка: получаем текущего пользователя (если он авторизован)
 	user, err := auth.GetUserByTelegramID(chatID)
 	if err != nil {
 		bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка чтения пользователя из базы. Попробуйте позже."))
 		return
 	}
 
-	if user != nil {
-		// Уже в системе
-		if update.Message.IsCommand() {
-			switch update.Message.Command() {
-			case "register":
-				bot.Send(tgbotapi.NewMessage(chatID, "❌ Вы уже зарегистрированы. Используйте /logout, чтобы выйти и зарегистрироваться заново."))
-			case "login":
-				bot.Send(tgbotapi.NewMessage(chatID, "❌ Вы уже вошли в систему. Используйте /logout, чтобы выйти."))
-			case "logout":
-				// Вышли → telegram_id=0
-				user.TelegramID = 0
-				_ = auth.SaveUser(user) // при желании обработайте ошибку
-				bot.Send(tgbotapi.NewMessage(chatID, "✅ Вы успешно вышли из системы."))
-			case "cancel":
-				bot.Send(tgbotapi.NewMessage(chatID, "ℹ Нечего отменять, вы уже в системе. Используйте /logout, если хотите выйти."))
-			default:
-				bot.Send(tgbotapi.NewMessage(chatID, "🤷 Команда не распознана или ещё не реализована."))
-			}
-		} else {
-			// не команда → можем подсказать
-			bot.Send(tgbotapi.NewMessage(chatID, "ℹ Вы уже в системе. Используйте /logout, чтобы выйти, или другие команды."))
-		}
-		return
-	}
-
-	// D. Пользователь не в системе
+	// D. Обработка команд /start и т.п.
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
 		case "start":
-			bot.Send(tgbotapi.NewMessage(chatID, "👋 Привет! Используй /register для регистрации или /login для входа."))
-		case "register":
-			userStates[chatID] = StateWaitingForFaculty
-			userTempDataMap[chatID] = &tempUserData{}
-			sendFacultySelection(chatID, bot)
-		case "login":
-			loginStates[chatID] = LoginStateWaitingForRegCode
-			loginTempDataMap[chatID] = &loginData{}
-			bot.Send(tgbotapi.NewMessage(chatID, "🔑 Введите ваш пропуск (регистрационный код):"))
-		case "logout":
-			bot.Send(tgbotapi.NewMessage(chatID, "❌ Вы не вошли в систему."))
-		case "cancel":
-			bot.Send(tgbotapi.NewMessage(chatID, "ℹ Нечего отменять, вы не в процессе."))
+			sendMainMenu(chatID, bot, user)
+			return
 		default:
-			bot.Send(tgbotapi.NewMessage(chatID, "🤷 Команда не распознана или ещё не реализована."))
+			sendMainMenu(chatID, bot, user)
+			return
 		}
 	} else {
-		bot.Send(tgbotapi.NewMessage(chatID, "ℹ Для начала используйте /register или /login"))
+		// Если пришло обычное сообщение, просто показываем меню
+		sendMainMenu(chatID, bot, user)
+		return
 	}
 }
 
-// ProcessCallback — обрабатывает callback‑запросы инлайн-кнопок (выбор факультета/группы).
+// ProcessCallback — обрабатывает callback‑запросы инлайн-кнопок (главное меню + вызов RegistrationProcessCallback).
 func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
+	chatID := callback.Message.Chat.ID
+
+	switch callback.Data {
+
+	// --- Меню для неавторизованных ---
+	case "menu_register":
+		userStates[chatID] = StateWaitingForFaculty
+		userTempDataMap[chatID] = &tempUserData{}
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Переходим к регистрации"))
+		sendFacultySelection(chatID, bot)
+		return
+
+	case "menu_login":
+		loginStates[chatID] = LoginStateWaitingForRegCode
+		loginTempDataMap[chatID] = &loginData{}
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Переходим к входу"))
+		bot.Send(tgbotapi.NewMessage(chatID, "🔑 Введите ваш регистрационный код:"))
+		return
+
+	// --- Меню для авторизованных ---
+	case "menu_schedule":
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Расписание"))
+		bot.Send(tgbotapi.NewMessage(chatID, "Ваше расписание: (здесь может быть реальная логика)"))
+		// Показываем меню снова
+		user, _ := auth.GetUserByTelegramID(chatID)
+		sendMainMenu(chatID, bot, user)
+		return
+
+	case "menu_materials":
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Материалы"))
+		bot.Send(tgbotapi.NewMessage(chatID, "Список материалов: (здесь может быть реальная логика)"))
+		// Показываем меню снова
+		user, _ := auth.GetUserByTelegramID(chatID)
+		sendMainMenu(chatID, bot, user)
+		return
+
+	case "menu_logout":
+		user, err := auth.GetUserByTelegramID(chatID)
+		if err != nil || user == nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Вы не авторизованы"))
+		} else {
+			user.TelegramID = 0
+			_ = auth.SaveUser(user)
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Вы вышли из системы"))
+			bot.Send(tgbotapi.NewMessage(chatID, "✅ Вы успешно вышли из системы."))
+		}
+		// После выхода показываем меню для неавторизованных
+		sendMainMenu(chatID, bot, nil)
+		return
+
+	case "menu_help":
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Справка"))
+		bot.Send(tgbotapi.NewMessage(chatID, "Доступные действия:\n"+
+			"• Регистрация / Вход — для неавторизованных\n"+
+			"• Расписание / Материалы / Выход — для авторизованных\n"+
+			"• Справка — показать это сообщение"))
+		// Возвращаемся в меню (в зависимости от авторизации)
+		user, _ := auth.GetUserByTelegramID(chatID)
+		sendMainMenu(chatID, bot, user)
+		return
+	}
+
+	// Если callback не относится к главному меню, передаём обработку регистрации (выбор факультета/группы).
 	RegistrationProcessCallback(callback, bot)
 }
+
+// --- Заглушки для отсутствующих функций ---
+// Если у вас функции sendFacultySelection и RegistrationProcessCallback реализованы в другом файле,
+// убедитесь, что все файлы находятся в одном пакете. Если их нет, можно добавить следующие заглушки:
