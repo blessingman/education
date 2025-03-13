@@ -18,6 +18,39 @@ func main() {
 	bot.Debug = true
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
+	// Здесь задаём команды
+	commands := []tgbotapi.BotCommand{
+		{
+			Command:     "register",
+			Description: "Зарегистрироваться",
+		},
+		{
+			Command:     "login",
+			Description: "Войти",
+		},
+		{
+			Command:     "logout",
+			Description: "Выйти из системы",
+		},
+		{
+			Command:     "help",
+			Description: "Получить справку",
+		},
+		{
+			Command:     "cancel",
+			Description: "Отказаться от операции",
+		},
+	}
+
+	// Создаём запрос на установку команд
+	setCmds := tgbotapi.NewSetMyCommands(commands...)
+
+	// Отправляем запрос в Telegram
+	_, err = bot.Request(setCmds)
+	if err != nil {
+		log.Printf("Ошибка установки команд: %v", err)
+	}
+
 	// Настройка получения обновлений.
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
