@@ -17,51 +17,76 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	chatID := update.Message.Chat.ID
 	text := strings.TrimSpace(update.Message.Text)
 
-	// Если пользователь находится в процессе входа.
+	// ----------------------
+	// 1. Если пользователь в процессе входа
+	// ----------------------
 	if state, ok := loginStates[chatID]; ok {
-		// Если введена команда /cancel, можно сбросить процесс.
-		if update.Message.IsCommand() && update.Message.Command() == "cancel" {
-			delete(loginStates, chatID)
-			delete(loginTempDataMap, chatID)
-			bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс входа отменён."))
+		// Разрешаем только /cancel
+		if update.Message.IsCommand() {
+			if update.Message.Command() == "cancel" {
+				delete(loginStates, chatID)
+				delete(loginTempDataMap, chatID)
+				bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс входа отменён."))
+			} else {
+				// Любая другая команда — запрещаем
+				bot.Send(tgbotapi.NewMessage(chatID, "Вы уже в процессе входа. Используйте /cancel, чтобы отменить."))
+			}
 			return
 		}
+		// Если это не команда, продолжаем процесс входа
 		processLoginMessage(update, bot, state, text)
 		return
 	}
 
-	// Если пользователь находится в процессе регистрации.
+	// ----------------------
+	// 2. Если пользователь в процессе регистрации
+	// ----------------------
 	if state, ok := userStates[chatID]; ok {
-		if update.Message.IsCommand() && update.Message.Command() == "cancel" {
-			delete(userStates, chatID)
-			delete(userTempDataMap, chatID)
-			bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс регистрации отменён."))
+		// Разрешаем только /cancel
+		if update.Message.IsCommand() {
+			if update.Message.Command() == "cancel" {
+				delete(userStates, chatID)
+				delete(userTempDataMap, chatID)
+				bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс регистрации отменён."))
+			} else {
+				// Любая другая команда — запрещаем
+				bot.Send(tgbotapi.NewMessage(chatID, "Вы уже в процессе регистрации. Используйте /cancel, чтобы отменить."))
+			}
 			return
 		}
+		// Если это не команда, продолжаем процесс регистрации
 		processRegistrationMessage(update, bot, state, text)
 		return
 	}
 
-	// Если пользователь уже зарегистрован (предполагаем, что UsersMap хранит зарегистрированных пользователей по TelegramID).
+	// ----------------------
+	// 3. Если пользователь уже в системе (зарегистрирован и вошёл)
+	// ----------------------
 	if _, registered := models.UsersMap[chatID]; registered {
 		if update.Message.IsCommand() {
 			switch update.Message.Command() {
 			case "register":
 				bot.Send(tgbotapi.NewMessage(chatID, "❌ Вы уже зарегистрированы. Используйте /logout, чтобы выйти и зарегистрироваться заново."))
-				return
 			case "login":
 				bot.Send(tgbotapi.NewMessage(chatID, "❌ Вы уже вошли в систему. Используйте /logout, чтобы выйти."))
-				return
 			case "logout":
-				// Здесь удаляем пользователя из UsersMap, чтобы "выйти"
 				delete(models.UsersMap, chatID)
 				bot.Send(tgbotapi.NewMessage(chatID, "✅ Вы успешно вышли из системы."))
-				return
+			case "cancel":
+				bot.Send(tgbotapi.NewMessage(chatID, "ℹ Нечего отменять, вы уже в системе. Используйте /logout, если хотите выйти."))
+			default:
+				bot.Send(tgbotapi.NewMessage(chatID, "🤷 Команда не распознана или ещё не реализована."))
 			}
+		} else {
+			// Любые некомандные сообщения можно либо игнорировать, либо дать подсказку
+			bot.Send(tgbotapi.NewMessage(chatID, "ℹ Вы уже в системе. Используйте /logout, чтобы выйти, или другие команды."))
 		}
+		return
 	}
 
-	// Обработка команд, если пользователь не в процессе регистрации/входа.
+	// ----------------------
+	// 4. Если пользователь не в процессе и не в системе
+	// ----------------------
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
 		case "start":
@@ -76,6 +101,8 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 			bot.Send(tgbotapi.NewMessage(chatID, "🔑 Введите ваш пропуск (регистрационный код):"))
 		case "logout":
 			bot.Send(tgbotapi.NewMessage(chatID, "❌ Вы не вошли в систему."))
+		case "cancel":
+			bot.Send(tgbotapi.NewMessage(chatID, "ℹ Нечего отменять, вы не в процессе."))
 		default:
 			bot.Send(tgbotapi.NewMessage(chatID, "🤷 Команда не распознана или ещё не реализована."))
 		}

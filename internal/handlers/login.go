@@ -34,7 +34,13 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 			bot.Send(tgbotapi.NewMessage(chatID, "❌ Неверный пароль. Попробуйте ещё раз:"))
 			return
 		}
+
+		// ВАЖНО: Сохраняем пользователя в models.UsersMap,
+		// чтобы бот считал, что пользователь вошёл в систему
+		models.UsersMap[chatID] = user
+
 		bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("🎉 Вход выполнен успешно! Добро пожаловать, %s", user.Name)))
+
 		delete(loginStates, chatID)
 		delete(loginTempDataMap, chatID)
 		return
