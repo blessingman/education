@@ -22,18 +22,20 @@ func main() {
 	bot.Debug = true
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
-	// Установка команд (если нужно)
-	commands := []tgbotapi.BotCommand{
-		{Command: "register", Description: "Зарегистрироваться"},
-		{Command: "login", Description: "Войти"},
-		{Command: "logout", Description: "Выйти из системы"},
-		{Command: "help", Description: "Получить справку"},
-		{Command: "cancel", Description: "Отменить текущую операцию"},
-	}
-	setCmds := tgbotapi.NewSetMyCommands(commands...)
-	if _, err = bot.Request(setCmds); err != nil {
-		log.Printf("Ошибка установки команд: %v", err)
-	}
+	/*
+		// Установка команд (если нужно)
+		commands := []tgbotapi.BotCommand{
+			{Command: "register", Description: "Зарегистрироваться"},
+			{Command: "login", Description: "Войти"},
+			{Command: "logout", Description: "Выйти из системы"},
+			{Command: "help", Description: "Получить справку"},
+			{Command: "cancel", Description: "Отменить текущую операцию"},
+		}
+		setCmds := tgbotapi.NewSetMyCommands(commands...)
+		if _, err = bot.Request(setCmds); err != nil {
+			log.Printf("Ошибка установки команд: %v", err)
+		}
+	*/
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
