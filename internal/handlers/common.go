@@ -5,6 +5,7 @@ import (
 	"education/internal/db"
 	"education/internal/models"
 	"fmt"
+	"time"
 )
 
 // FindVerifiedParticipant ищет верифицированного участника в памяти (verifiedParticipants)
@@ -70,4 +71,84 @@ func GetGroupsByFaculty(faculty string) ([]string, error) {
 		result = append(result, g)
 	}
 	return result, rows.Err()
+}
+
+// GetScheduleByGroup возвращает расписание для указанной группы.
+func GetScheduleByGroup(group string) ([]models.Schedule, error) {
+	rows, err := db.DB.Query(`
+        SELECT id, course_id, group_name, teacher_reg_code, schedule_time, description
+        FROM schedules
+        WHERE group_name = ?
+        ORDER BY schedule_time
+    `, group)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var schedules []models.Schedule
+	for rows.Next() {
+		var s models.Schedule
+		var scheduleTimeStr string
+		if err := rows.Scan(&s.ID, &s.CourseID, &s.GroupName, &s.TeacherRegCode, &scheduleTimeStr, &s.Description); err != nil {
+			return nil, err
+		}
+		// Преобразуем строку в time.Time (формат зависит от того, как сохраняете дату)
+		s.ScheduleTime, _ = time.Parse(time.RFC3339, scheduleTimeStr)
+		schedules = append(schedules, s)
+	}
+	return schedules, rows.Err()
+}
+
+// GetMaterialsByGroup возвращает список материалов для указанной группы.
+func GetMaterialsByGroup(group string) ([]models.Material, error) {
+	rows, err := db.DB.Query(`
+        SELECT id, course_id, group_name, teacher_reg_code, title, file_url, description
+        FROM materials
+        WHERE group_name = ?
+    `, group)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var materials []models.Material
+	for rows.Next() {
+		var m models.Material
+		if err := rows.Scan(&m.ID, &m.CourseID, &m.GroupName, &m.TeacherRegCode, &m.Title, &m.FileURL, &m.Description); err != nil {
+			return nil, err
+		}
+		materials = append(materials, m)
+	}
+	return materials, rows.Err()
+}
+
+// GetSchedulesByTeacher возвращает список расписания для преподавателя по его регистрационному коду.
+func GetSchedulesByTeacher(teacherRegCode string) ([]models.Schedule, error) {
+	rows, err := db.DB.Query(`
+		SELECT id, course_id, group_name, teacher_reg_code, schedule_time, description
+		FROM schedules
+		WHERE teacher_reg_code = ?
+		ORDER BY schedule_time
+	`, teacherRegCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var schedules []models.Schedule
+	for rows.Next() {
+		var s models.Schedule
+		var scheduleTimeStr string
+		if err := rows.Scan(&s.ID, &s.CourseID, &s.GroupName, &s.TeacherRegCode, &scheduleTimeStr, &s.Description); err != nil {
+			return nil, err
+		}
+		// Преобразуем строку в time.Time, формат зависит от того, как записаны даты
+		s.ScheduleTime, err = time.Parse(time.RFC3339, scheduleTimeStr)
+		if err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, s)
+	}
+	return schedules, nil
 }
