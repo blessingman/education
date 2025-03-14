@@ -4,6 +4,7 @@ import (
 	"education/internal/db"
 	"education/internal/models"
 	"fmt"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -243,16 +244,22 @@ func AddScheduleForTeacher(teacherRegCode string, courseID int64, groupName stri
 	return nil
 }
 
-// GetTeacherSchedulesFormatted формирует строку с расписанием для преподавателя по его регистрационному коду.
-func GetTeacherSchedulesFormatted(teacherRegCode string) (string, error) {
-	// Выполняем запрос с объединением таблицы schedules и courses для получения названия курса
-	rows, err := db.DB.Query(`
-		SELECT s.schedule_time, s.description, s.group_name, c.name
+// scheduleEntryFormatter – тип функции, которая принимает время занятия, описание, дополнительное поле и название курса, и возвращает отформатированную строку.
+type scheduleEntryFormatter func(t time.Time, description, extra, courseName string) string
+
+// getSchedulesFormatted выполняет запрос к базе с указанным условием (filterClause) и аргументами,
+// группирует записи по курсу, а затем форматирует вывод с помощью функции formatter.
+func getSchedulesFormatted(filterClause string, args []interface{}, formatter scheduleEntryFormatter) (string, error) {
+	// Запрос с объединением расписания и курсов
+	query := fmt.Sprintf(`
+		SELECT s.schedule_time, s.description, s.group_name, s.teacher_reg_code, c.name
 		FROM schedules s
 		JOIN courses c ON s.course_id = c.id
-		WHERE s.teacher_reg_code = ?
+		%s
 		ORDER BY s.schedule_time
-	`, teacherRegCode)
+	`, filterClause)
+
+	rows, err := db.DB.Query(query, args...)
 	if err != nil {
 		return "", err
 	}
@@ -261,17 +268,24 @@ func GetTeacherSchedulesFormatted(teacherRegCode string) (string, error) {
 	// Группируем записи по курсу
 	scheduleMap := make(map[string][]string)
 	for rows.Next() {
-		var scheduleTimeStr, description, groupName, courseName string
-		if err := rows.Scan(&scheduleTimeStr, &description, &groupName, &courseName); err != nil {
+		var scheduleTimeStr, description, groupName, teacherRegCode, courseName string
+		if err := rows.Scan(&scheduleTimeStr, &description, &groupName, &teacherRegCode, &courseName); err != nil {
 			return "", err
 		}
-		// Преобразуем строку времени в time.Time
 		t, err := time.Parse(time.RFC3339, scheduleTimeStr)
 		if err != nil {
 			return "", err
 		}
-		// Форматируем дату/время и составляем запись
-		entry := fmt.Sprintf("• %s – %s (группа: %s)", t.Format("02.01.2006 15:04"), description, groupName)
+		// Дополнительное поле зависит от роли:
+		// Для преподавателя – группа, для студента – регистрационный код преподавателя.
+		var extra string
+		// Если в условии фильтрации присутствует "teacher_reg_code", считаем, что это расписание для преподавателя.
+		if filterClauseContains(filterClause, "teacher_reg_code") {
+			extra = fmt.Sprintf("группа: %s", groupName)
+		} else {
+			extra = fmt.Sprintf("Преп.: %s", teacherRegCode)
+		}
+		entry := formatter(t, description, extra, courseName)
 		scheduleMap[courseName] = append(scheduleMap[courseName], entry)
 	}
 
@@ -292,46 +306,102 @@ func GetTeacherSchedulesFormatted(teacherRegCode string) (string, error) {
 	return msgText, nil
 }
 
-// GetStudentSchedulesFormatted формирует строку с расписанием для студента по его группе.
+// filterClauseContains – простая функция для проверки наличия подстроки в условии запроса.
+
+func filterClauseContains(filterClause, substr string) bool {
+	return strings.Contains(filterClause, substr)
+}
+
+func GetTeacherSchedulesFormatted(teacherRegCode string) (string, error) {
+	// Условие фильтрации: выбираем записи по teacher_reg_code
+	filterClause := "WHERE s.teacher_reg_code = ?"
+	args := []interface{}{teacherRegCode}
+	formatter := func(t time.Time, description, extra, courseName string) string {
+		return fmt.Sprintf("• %s – %s (%s)", t.Format("02.01.2006 15:04"), description, extra)
+	}
+	return getSchedulesFormatted(filterClause, args, formatter)
+}
+
 func GetStudentSchedulesFormatted(group string) (string, error) {
-	// Выполняем запрос с объединением таблицы schedules и courses для получения названия курса
-	rows, err := db.DB.Query(`
-		SELECT s.schedule_time, s.description, s.teacher_reg_code, c.name
+	// Условие фильтрации: выбираем записи по группе
+	filterClause := "WHERE s.group_name = ?"
+	args := []interface{}{group}
+	formatter := func(t time.Time, description, extra, courseName string) string {
+		return fmt.Sprintf("• %s – %s (%s)", t.Format("02.01.2006 15:04"), description, extra)
+	}
+	return getSchedulesFormatted(filterClause, args, formatter)
+}
+
+// GetSchedulesFormattedByWeekGeneric возвращает расписание, сгруппированное по дням недели,
+// в зависимости от режима: "teacher" или "student". Для преподавателей фильтр – регистрационный код,
+// для студентов – название группы.
+func GetSchedulesFormattedByWeekGeneric(mode, filterValue string) (string, error) {
+	var condition string
+	switch mode {
+	case "teacher":
+		condition = "s.teacher_reg_code = ?"
+	case "student":
+		condition = "s.group_name = ?"
+	default:
+		return "", fmt.Errorf("неизвестный режим: %s", mode)
+	}
+
+	// Объединяем таблицы для получения названия курса и ФИО преподавателя
+	query := fmt.Sprintf(`
+		SELECT s.schedule_time, s.description, s.group_name, c.name, u.name
 		FROM schedules s
 		JOIN courses c ON s.course_id = c.id
-		WHERE s.group_name = ?
+		JOIN users u ON u.registration_code = s.teacher_reg_code
+		WHERE %s
 		ORDER BY s.schedule_time
-	`, group)
+	`, condition)
+
+	rows, err := db.DB.Query(query, filterValue)
 	if err != nil {
 		return "", err
 	}
 	defer rows.Close()
 
-	// Группируем записи по курсу
-	scheduleMap := make(map[string][]string)
+	// Группируем записи по дню недели
+	scheduleByDay := make(map[time.Weekday][]string)
 	for rows.Next() {
-		var scheduleTimeStr, description, teacherRegCode, courseName string
-		if err := rows.Scan(&scheduleTimeStr, &description, &teacherRegCode, &courseName); err != nil {
+		var scheduleTimeStr, description, groupName, courseName, teacherName string
+		if err := rows.Scan(&scheduleTimeStr, &description, &groupName, &courseName, &teacherName); err != nil {
 			return "", err
 		}
-		// Преобразуем строку времени в time.Time
 		t, err := time.Parse(time.RFC3339, scheduleTimeStr)
 		if err != nil {
 			return "", err
 		}
-		// Формируем запись: время – описание – преподаватель
-		entry := fmt.Sprintf("• %s – %s (Преп.: %s)", t.Format("02.01.2006 15:04"), description, teacherRegCode)
-		scheduleMap[courseName] = append(scheduleMap[courseName], entry)
+		wd := t.Weekday()
+		var entry string
+		if mode == "teacher" {
+			// Для преподавателя показываем группу
+			entry = fmt.Sprintf("• %s [%s]: %s (группа: %s)", t.Format("15:04"), courseName, description, groupName)
+		} else {
+			// Для студента показываем ФИО преподавателя
+			entry = fmt.Sprintf("• %s [%s]: %s (Преп.: %s)", t.Format("15:04"), courseName, description, teacherName)
+		}
+		scheduleByDay[wd] = append(scheduleByDay[wd], entry)
 	}
 
-	// Формируем итоговое сообщение
-	if len(scheduleMap) == 0 {
+	if len(scheduleByDay) == 0 {
 		return "Расписание не найдено.", nil
 	}
 
+	// Порядок дней недели
+	weekdaysOrder := []time.Weekday{
+		time.Monday, time.Tuesday, time.Wednesday,
+		time.Thursday, time.Friday, time.Saturday, time.Sunday,
+	}
+
 	msgText := "Ваше расписание:\n\n"
-	for course, entries := range scheduleMap {
-		msgText += fmt.Sprintf("📘 %s:\n", course)
+	for _, wd := range weekdaysOrder {
+		entries, ok := scheduleByDay[wd]
+		if !ok || len(entries) == 0 {
+			continue
+		}
+		msgText += fmt.Sprintf("🔹 %s:\n", weekdayName(wd))
 		for _, entry := range entries {
 			msgText += "  " + entry + "\n"
 		}
@@ -339,4 +409,26 @@ func GetStudentSchedulesFormatted(group string) (string, error) {
 	}
 
 	return msgText, nil
+}
+
+// weekdayName возвращает название дня недели на русском языке.
+func weekdayName(wd time.Weekday) string {
+	switch wd {
+	case time.Monday:
+		return "Понедельник"
+	case time.Tuesday:
+		return "Вторник"
+	case time.Wednesday:
+		return "Среда"
+	case time.Thursday:
+		return "Четверг"
+	case time.Friday:
+		return "Пятница"
+	case time.Saturday:
+		return "Суббота"
+	case time.Sunday:
+		return "Воскресенье"
+	default:
+		return ""
+	}
 }

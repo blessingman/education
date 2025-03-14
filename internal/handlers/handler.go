@@ -274,23 +274,18 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		bot.Request(tgbotapi.NewCallback(callback.ID, "🗓 Расписание"))
 		user, _ := auth.GetUserByTelegramID(chatID)
 		var msgText string
+		var err error
 
 		if user.Role == "teacher" {
-			formatted, err := GetTeacherSchedulesFormatted(user.RegistrationCode)
-			if err != nil {
-				msgText = "Ошибка при получении расписания."
-			} else {
-				msgText = formatted
-			}
+			msgText, err = GetSchedulesFormattedByWeekGeneric("teacher", user.RegistrationCode)
 		} else if user.Role == "student" {
-			formatted, err := GetStudentSchedulesFormatted(user.Group)
-			if err != nil {
-				msgText = "Ошибка при получении расписания."
-			} else {
-				msgText = formatted
-			}
+			msgText, err = GetSchedulesFormattedByWeekGeneric("student", user.Group)
 		} else {
 			msgText = "Роль пользователя не определена."
+		}
+
+		if err != nil {
+			msgText = "Ошибка при получении расписания."
 		}
 
 		msg := tgbotapi.NewMessage(chatID, msgText)
