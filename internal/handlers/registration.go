@@ -225,7 +225,7 @@ func sendRoleSelection(chatID int64, bot *tgbotapi.BotAPI) {
 
 	// Кнопка «Отмена»
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("Отмена", "cancel_process"),
+		tgbotapi.NewInlineKeyboardButtonData("Отмена Регистрации", "cancel_process"),
 	))
 
 	msg := tgbotapi.NewMessage(chatID, "👤 Выберите вашу роль (или отмените операцию):")
@@ -256,7 +256,7 @@ func sendFacultySelection(chatID int64, bot *tgbotapi.BotAPI) {
 
 	// Кнопка «Отмена»
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("Отмена", "cancel_process"),
+		tgbotapi.NewInlineKeyboardButtonData("Отмена Регистрации", "cancel_process"),
 	))
 
 	msg := tgbotapi.NewMessage(chatID, "📚 Выберите ваш факультет (или отмените операцию):")
@@ -287,7 +287,7 @@ func sendGroupSelection(chatID int64, facultyName string, bot *tgbotapi.BotAPI) 
 
 	// Кнопка «Отмена»
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("Отмена", "cancel_process"),
+		tgbotapi.NewInlineKeyboardButtonData("Отмена Регистрации", "cancel_process"),
 	))
 
 	msg := tgbotapi.NewMessage(chatID, "📖 Выберите вашу группу (или отмените операцию):")

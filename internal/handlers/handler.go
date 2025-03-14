@@ -92,6 +92,7 @@ func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
 // или при желании тоже подкорректировать тексты сообщений.
 
 // ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
+// ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
 func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	if update.Message == nil {
 		return
@@ -101,6 +102,19 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 
 	// Если пользователь нажал на кнопку «Главное меню» (ReplyKeyboard)
 	if text == "🏠 Главное меню" {
+		// Сбрасываем все активные процессы (регистрация, логин и т.д.)
+		if userStates[chatID] != "" {
+			delete(userStates, chatID)
+			delete(userTempDataMap, chatID)
+			bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс регистрации отменён."))
+		}
+		if loginStates[chatID] != "" {
+			delete(loginStates, chatID)
+			delete(loginTempDataMap, chatID)
+			bot.Send(tgbotapi.NewMessage(chatID, "❌ Процесс входа отменён."))
+		}
+
+		// Показываем главное меню
 		user, _ := auth.GetUserByTelegramID(chatID)
 		sendMainMenu(chatID, bot, user)
 		return
