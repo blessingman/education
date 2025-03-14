@@ -6,6 +6,7 @@ type User struct {
 	TelegramID       int64
 	Role             string
 	Name             string
+	Faculty          string // Добавленное поле
 	Group            string
 	Password         string
 	RegistrationCode string

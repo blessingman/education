@@ -79,7 +79,7 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 		sendAndTrackMessage(bot, msg)
 
 		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot)
+		deleteMessages(chatID, bot, 6)
 
 		// Показываем главное меню
 		sendMainMenu(chatID, bot, user)

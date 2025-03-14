@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"fmt"
+	"time"
 
 	"education/internal/auth"
 	// Функции GetAllFaculties и GetGroupsByFaculty определены в faculty.go
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
+// processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
 // processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
 // processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
 // processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
@@ -20,7 +23,6 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 	}
 
 	switch state {
-	// Регистрация для студентов: ввод регистрационного кода (пропуска)
 	case StateWaitingForPass:
 		if tempData.Faculty == "" || tempData.Group == "" {
 			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка: факультет или группа не выбраны.")
@@ -44,7 +46,6 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 		sendAndTrackMessage(bot, msg)
 		return
 
-	// Завершение регистрации для студентов: ввод пароля
 	case StateWaitingForPassword:
 		if tempData.FoundUserID == 0 {
 			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка регистрации. Начните заново с /register.")
@@ -59,26 +60,18 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 		}
 		userInDB.TelegramID = chatID
 		userInDB.Password = text
+		userInDB.Faculty = tempData.Faculty // Переносим Faculty
+		userInDB.Group = tempData.Group     // Переносим Group
 		if err := auth.SaveUser(userInDB); err != nil {
 			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже.")
 			sendAndTrackMessage(bot, msg)
 			return
 		}
 
-		finalMsg := fmt.Sprintf(
-			"🎉 Регистрация завершена!\n\n👤 ФИО: %s\n🏫 Факультет: %s\n📚 Группа: %s\n🔑 Роль: %s",
-			userInDB.Name,
-			tempData.Faculty,
-			userInDB.Group,
-			userInDB.Role,
-		)
-		msg := tgbotapi.NewMessage(chatID, finalMsg)
-		sendAndTrackMessage(bot, msg)
+		// Удаляем все сообщения из чата с задержкой (например, 2 секунды)
+		deleteMessages(chatID, bot, 2*time.Second)
 
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot)
-
-		// Показываем главное меню
+		// Показываем главное меню с данными пользователя
 		sendMainMenu(chatID, bot, userInDB)
 
 		// Сбрасываем состояния
@@ -86,7 +79,6 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 		delete(userTempDataMap, chatID)
 		return
 
-	// Регистрация для преподавателей: ввод регистрационного кода (пропуска)
 	case StateTeacherWaitingForPass:
 		userInDB, err := auth.GetUserByRegCode(text)
 		if err != nil {
@@ -115,7 +107,6 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 		sendAndTrackMessage(bot, msg)
 		return
 
-	// Завершение регистрации для преподавателей: ввод пароля
 	case StateTeacherWaitingForPassword:
 		if tempData.FoundUserID == 0 {
 			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка регистрации. Начните заново с /register.")
@@ -136,18 +127,10 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 			return
 		}
 
-		finalMsg := fmt.Sprintf(
-			"🎉 Регистрация завершена!\n\n👤 ФИО: %s\n🔑 Роль: %s",
-			userInDB.Name,
-			userInDB.Role,
-		)
-		msg := tgbotapi.NewMessage(chatID, finalMsg)
-		sendAndTrackMessage(bot, msg)
+		// Удаляем все сообщения из чата с задержкой (например, 2 секунды)
+		deleteMessages(chatID, bot, 2*time.Second)
 
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot)
-
-		// Показываем главное меню
+		// Показываем главное меню с данными пользователя
 		sendMainMenu(chatID, bot, userInDB)
 
 		// Сбрасываем состояния
@@ -187,7 +170,7 @@ func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi
 		}
 
 		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot)
+		deleteMessages(chatID, bot, 6)
 
 		// Отправляем сообщение об отмене
 		msg := tgbotapi.NewMessage(chatID, "❌ Процесс отменён.")
