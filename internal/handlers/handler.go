@@ -71,6 +71,8 @@ func deleteMessages(chatID int64, bot *tgbotapi.BotAPI, delay time.Duration) {
 // с приветствием при первом вызове и коротким текстом при повторных вызовах.
 // sendMainMenu формирует меню (Reply-кнопка «Главное меню» + Inline-кнопки),
 // с приветствием при первом вызове и данными пользователя при авторизации.
+// sendMainMenu формирует меню (Reply-кнопка «Главное меню» + Inline-кнопки),
+// с приветствием при первом вызове и данными пользователя при авторизации.
 func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
 	// --- 1) Кнопка «Главное меню» (ReplyKeyboard) ---
 	replyKeyboard := tgbotapi.NewReplyKeyboard(
@@ -154,6 +156,7 @@ func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
 // ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
 // ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
 // ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
+// ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
 func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	if update.Message == nil {
 		return
@@ -173,10 +176,7 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 			delete(loginTempDataMap, chatID)
 		}
 
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
-		// Показываем главное меню
+		// Показываем главное меню без удаления сообщений
 		user, _ := auth.GetUserByTelegramID(chatID)
 		sendMainMenu(chatID, bot, user)
 		return
@@ -194,14 +194,11 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 			delete(loginTempDataMap, chatID)
 		}
 
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
 		// Отправляем сообщение об отмене
 		msg := tgbotapi.NewMessage(chatID, "❌ Процесс отменён.")
 		sendAndTrackMessage(bot, msg)
 
-		// Показываем главное меню
+		// Показываем главное меню без удаления сообщений
 		user, _ := auth.GetUserByTelegramID(chatID)
 		sendMainMenu(chatID, bot, user)
 		return
@@ -223,31 +220,37 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
 		case "start":
-			// Удаляем все сообщения из чата
-			deleteMessages(chatID, bot, 6)
-
 			user, _ := auth.GetUserByTelegramID(chatID)
 			sendMainMenu(chatID, bot, user)
 			return
+		case "logout":
+			user, err := auth.GetUserByTelegramID(chatID)
+			if err != nil || user == nil {
+				msg := tgbotapi.NewMessage(chatID, "Вы не авторизованы.")
+				sendAndTrackMessage(bot, msg)
+			} else {
+				user.TelegramID = 0
+				_ = auth.SaveUser(user)
+				deleteMessages(chatID, bot, 4*time.Second) // Удаляем сообщения при выходе
+				msg := tgbotapi.NewMessage(chatID, "Вы успешно вышли. До скорой встречи!")
+				sendAndTrackMessage(bot, msg)
+				sendMainMenu(chatID, bot, nil)
+			}
+			return
 		default:
-			// Удаляем все сообщения из чата
-			deleteMessages(chatID, bot, 6)
-
 			user, _ := auth.GetUserByTelegramID(chatID)
 			sendMainMenu(chatID, bot, user)
 			return
 		}
 	} else {
 		// Любой другой текст – просто показываем меню заново
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
 		user, _ := auth.GetUserByTelegramID(chatID)
 		sendMainMenu(chatID, bot, user)
 		return
 	}
 }
 
+// ProcessCallback — обрабатывает нажатия инлайн-кнопок (меню регистрации, входа, расписания и т.д.).
 // ProcessCallback — обрабатывает нажатия инлайн-кнопок (меню регистрации, входа, расписания и т.д.).
 // ProcessCallback — обрабатывает нажатия инлайн-кнопок (меню регистрации, входа, расписания и т.д.).
 // ProcessCallback — обрабатывает нажатия инлайн-кнопок (меню регистрации, входа, расписания и т.д.).
@@ -284,24 +287,12 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		bot.Request(tgbotapi.NewCallback(callback.ID, "🗓 Расписание"))
 		msg := tgbotapi.NewMessage(chatID, "Вот твоё расписание: (здесь может быть реальная логика)")
 		sendAndTrackMessage(bot, msg)
-
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
-		user, _ := auth.GetUserByTelegramID(chatID)
-		sendMainMenu(chatID, bot, user)
 		return
 
 	case "menu_materials":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "📚 Материалы"))
 		msg := tgbotapi.NewMessage(chatID, "Список доступных материалов: (здесь может быть реальная логика)")
 		sendAndTrackMessage(bot, msg)
-
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
-		user, _ := auth.GetUserByTelegramID(chatID)
-		sendMainMenu(chatID, bot, user)
 		return
 
 	case "menu_logout":
@@ -311,19 +302,13 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		} else {
 			user.TelegramID = 0
 			_ = auth.SaveUser(user)
-
 			bot.Request(tgbotapi.NewCallback(callback.ID, "🚪 Выход"))
 			msg := tgbotapi.NewMessage(chatID, "Вы успешно вышли. До скорой встречи!")
 			sendAndTrackMessage(bot, msg)
-
-			// Удаляем старое сообщение с кнопками
-			delMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
-			bot.Request(delMsg)
+			// Удаляем все сообщения из чата с задержкой
+			deleteMessages(chatID, bot, 4*time.Second)
 		}
-
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
+		// Показываем главное меню без авторизации
 		sendMainMenu(chatID, bot, nil)
 		return
 
@@ -336,12 +321,6 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 				"• Кнопка «Выход» завершает работу\n"+
 				"• В любой момент жми «🏠 Главное меню» внизу экрана")
 		sendAndTrackMessage(bot, msg)
-
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
-		user, _ := auth.GetUserByTelegramID(chatID)
-		sendMainMenu(chatID, bot, user)
 		return
 
 	case "menu_edit_schedule":
@@ -353,11 +332,6 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		bot.Request(tgbotapi.NewCallback(callback.ID, "🛠 Изменение расписания..."))
 		msg := tgbotapi.NewMessage(chatID, "Добавьте или отредактируйте расписание (реализуйте по-своему).")
 		sendAndTrackMessage(bot, msg)
-
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
-		sendMainMenu(chatID, bot, user)
 		return
 
 	case "menu_edit_materials":
@@ -369,11 +343,6 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		bot.Request(tgbotapi.NewCallback(callback.ID, "🛠 Изменение материалов..."))
 		msg := tgbotapi.NewMessage(chatID, "Здесь можно загрузить или обновить учебные материалы (реализуйте по-своему).")
 		sendAndTrackMessage(bot, msg)
-
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
-		sendMainMenu(chatID, bot, user)
 		return
 	}
 

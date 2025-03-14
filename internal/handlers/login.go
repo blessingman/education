@@ -78,10 +78,7 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 		msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("🎉 Вход выполнен успешно! Добро пожаловать, %s", user.Name))
 		sendAndTrackMessage(bot, msg)
 
-		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
-
-		// Показываем главное меню
+		// Показываем главное меню с данными пользователя без удаления сообщений
 		sendMainMenu(chatID, bot, user)
 
 		// Сбрасываем логин-состояния

@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"fmt"
-	"time"
 
 	"education/internal/auth"
 	// Функции GetAllFaculties и GetGroupsByFaculty определены в faculty.go
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
 // processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
 // processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
 // processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
@@ -68,10 +68,7 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 			return
 		}
 
-		// Удаляем все сообщения из чата с задержкой (например, 2 секунды)
-		deleteMessages(chatID, bot, 2*time.Second)
-
-		// Показываем главное меню с данными пользователя
+		// Показываем главное меню с данными пользователя без удаления сообщений
 		sendMainMenu(chatID, bot, userInDB)
 
 		// Сбрасываем состояния
@@ -127,10 +124,7 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 			return
 		}
 
-		// Удаляем все сообщения из чата с задержкой (например, 2 секунды)
-		deleteMessages(chatID, bot, 2*time.Second)
-
-		// Показываем главное меню с данными пользователя
+		// Показываем главное меню с данными пользователя без удаления сообщений
 		sendMainMenu(chatID, bot, userInDB)
 
 		// Сбрасываем состояния
@@ -140,10 +134,6 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 	}
 }
 
-// RegistrationProcessCallback — обрабатывает callback‑запросы при выборе роли, факультета и группы.
-// RegistrationProcessCallback — обрабатывает callback-и при выборе роли, факультета, группы и т.д.
-// RegistrationProcessCallback — обрабатывает callback-и при выборе роли, факультета, группы и т.д.
-// RegistrationProcessCallback — обрабатывает callback-и при выборе роли, факультета, группы и т.д.
 func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	chatID := callback.Message.Chat.ID
 	data := callback.Data
@@ -170,7 +160,7 @@ func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi
 		}
 
 		// Удаляем все сообщения из чата
-		deleteMessages(chatID, bot, 6)
+		deleteMessages(chatID, bot, 4)
 
 		// Отправляем сообщение об отмене
 		msg := tgbotapi.NewMessage(chatID, "❌ Процесс отменён.")
