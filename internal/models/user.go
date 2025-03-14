@@ -1,13 +1,12 @@
 package models
 
-// User — одна таблица, хранит и "seed"-участников (telegram_id=0) и реальных.
 type User struct {
-	ID               int64 // PRIMARY KEY AUTOINCREMENT
+	ID               int64
 	TelegramID       int64
 	Role             string
 	Name             string
-	Faculty          string // Добавленное поле
-	Group            string
+	Faculty          string
+	Group            string // Для преподавателей не используется
 	Password         string
 	RegistrationCode string
 }

@@ -4,6 +4,7 @@ import (
 	"education/internal/auth"
 	"education/internal/models"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -67,14 +68,8 @@ func deleteMessages(chatID int64, bot *tgbotapi.BotAPI, delay time.Duration) {
 
 // sendMainMenu формирует меню (Reply-кнопка «Главное меню» + Inline-кнопки),
 // с приветствием при первом вызове и коротким текстом при повторных вызовах.
-// sendMainMenu формирует меню (Reply-кнопка «Главное меню» + Inline-кнопки),
-// с приветствием при первом вызове и коротким текстом при повторных вызовах.
-// sendMainMenu формирует меню (Reply-кнопка «Главное меню» + Inline-кнопки),
-// с приветствием при первом вызове и данными пользователя при авторизации.
-// sendMainMenu формирует меню (Reply-кнопка «Главное меню» + Inline-кнопки),
-// с приветствием при первом вызове и данными пользователя при авторизации.
 func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
-	// --- 1) Кнопка «Главное меню» (ReplyKeyboard) ---
+	// Кнопка «Главное меню»
 	replyKeyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("🏠 Главное меню"),
@@ -83,62 +78,78 @@ func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
 	replyKeyboard.OneTimeKeyboard = false
 	replyKeyboard.ResizeKeyboard = true
 
-	// Проверяем, приветствовался ли уже пользователь
+	// Проверка, приветствовался ли уже пользователь
 	greetedUsersMu.RLock()
 	alreadyGreeted := greetedUsers[chatID]
 	greetedUsersMu.RUnlock()
 
 	var firstMsgText string
 	if !alreadyGreeted {
-		// Первое приветствие
-		firstMsgText = "Привет! 👋 Нажми «🏠 Главное меню» внизу, если захочешь вернуться к списку действий."
-		// Отмечаем, что пользователь теперь приветствован
+		firstMsgText = "Привет! 👋 Нажми «🏠 Главное меню», если захочешь вернуться к списку действий."
 		greetedUsersMu.Lock()
 		greetedUsers[chatID] = true
 		greetedUsersMu.Unlock()
 	} else if user != nil {
-		// Показываем данные пользователя, если он авторизован
-		firstMsgText = fmt.Sprintf("👤 Привет, %s!\n🏫 Факультет: %s\n📚 Группа: %s\n🔑 Роль: %s",
-			user.Name, user.Faculty, user.Group, user.Role)
+		if user.Role == "teacher" {
+			// Для преподавателя получаем курсы и группы
+			courses, err := GetCoursesByTeacherID(user.ID)
+			if err != nil {
+				courses = []models.Course{}
+			}
+			groups, err := GetTeacherGroups(user.ID)
+			if err != nil {
+				groups = []models.TeacherCourseGroup{}
+			}
+			// Формируем список названий курсов и групп
+			var coursesText, groupsText string
+			for _, c := range courses {
+				coursesText += c.Name + ", "
+			}
+			coursesText = strings.TrimSuffix(coursesText, ", ")
+			for _, g := range groups {
+				groupsText += g.GroupName + ", "
+			}
+			groupsText = strings.TrimSuffix(groupsText, ", ")
+
+			firstMsgText = fmt.Sprintf("👤 Привет, %s!\n🏫 Факультет: %s\n📚 Курсы: %s\n📚 Группы: %s\n🔑 Роль: %s",
+				user.Name, user.Faculty, coursesText, groupsText, user.Role)
+		} else {
+			// Для студента
+			firstMsgText = fmt.Sprintf("👤 Привет, %s!\n🏫 Факультет: %s\n📚 Группа: %s\n🔑 Роль: %s",
+				user.Name, user.Faculty, user.Group, user.Role)
+		}
 	} else {
-		// Для неавторизованных пользователей
 		firstMsgText = "🤖 Готов к работе! Выбирай действие ниже."
 	}
 
-	// Отправляем первое сообщение (ReplyKeyboard)
+	// Отправляем сообщение приветствия
 	msg1 := tgbotapi.NewMessage(chatID, firstMsgText)
 	msg1.ReplyMarkup = replyKeyboard
 	sendAndTrackMessage(bot, msg1)
 
-	// --- 2) Инлайн-кнопки в зависимости от роли ---
+	// Формируем inline-кнопки меню
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	if user == nil {
-		// Не авторизован: «Регистрация» и «Вход»
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📝 Регистрация", "menu_register"),
 			tgbotapi.NewInlineKeyboardButtonData("🔑 Вход", "menu_login"),
 		))
 	} else {
-		// Авторизован. Общие кнопки
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🗓 Расписание", "menu_schedule"),
 			tgbotapi.NewInlineKeyboardButtonData("📚 Материалы", "menu_materials"),
 		))
-		// Дополнительные кнопки для преподавателей
 		if user.Role == "teacher" {
 			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("🛠 Изменить расписание", "menu_edit_schedule"),
 				tgbotapi.NewInlineKeyboardButtonData("🛠 Изменить материалы", "menu_edit_materials"),
 			))
 		}
-		// Кнопка «Выход»
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🚪 Выход", "menu_logout"),
 		))
 	}
-
-	// Кнопка «Справка» доступна всем
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData("❓ Справка", "menu_help"),
 	))
@@ -152,10 +163,6 @@ func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
 // Остальные функции (ProcessMessage, ProcessCallback) можно оставить без изменений,
 // или при желании тоже подкорректировать тексты сообщений.
 
-// ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
-// ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
-// ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
-// ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
 // ProcessMessage — обрабатывает входящие текстовые сообщения (включая нажатие «Главное меню»).
 func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	if update.Message == nil {
@@ -250,9 +257,6 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	}
 }
 
-// ProcessCallback — обрабатывает нажатия инлайн-кнопок (меню регистрации, входа, расписания и т.д.).
-// ProcessCallback — обрабатывает нажатия инлайн-кнопок (меню регистрации, входа, расписания и т.д.).
-// ProcessCallback — обрабатывает нажатия инлайн-кнопок (меню регистрации, входа, расписания и т.д.).
 // ProcessCallback — обрабатывает нажатия инлайн-кнопок (меню регистрации, входа, расписания и т.д.).
 func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	chatID := callback.Message.Chat.ID
