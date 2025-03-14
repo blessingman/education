@@ -13,6 +13,16 @@ import (
    1) Пользователь ввёл код → LoginStateWaitingForRegCode
    2) Пользователь ввёл пароль → LoginStateWaitingForPassword
 */
+// processLoginMessage обрабатывает этапы логина:
+/*
+   1) Пользователь ввёл код → LoginStateWaitingForRegCode
+   2) Пользователь ввёл пароль → LoginStateWaitingForPassword
+*/
+// processLoginMessage обрабатывает этапы логина:
+/*
+   1) Пользователь ввёл код → LoginStateWaitingForRegCode
+   2) Пользователь ввёл пароль → LoginStateWaitingForPassword
+*/
 func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, text string) {
 	chatID := update.Message.Chat.ID
 
@@ -29,7 +39,8 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 		ld.RegCode = text
 		loginStates[chatID] = LoginStateWaitingForPassword
 
-		bot.Send(tgbotapi.NewMessage(chatID, "🔑 Введите ваш пароль:"))
+		msg := tgbotapi.NewMessage(chatID, "🔑 Введите ваш пароль:")
+		sendAndTrackMessage(bot, msg)
 		return
 
 	case LoginStateWaitingForPassword:
@@ -39,30 +50,38 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 		// Ищем пользователя в БД по коду
 		user, err := auth.GetUserByRegCode(regCode)
 		if err != nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка чтения из БД. Попробуйте позже."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка чтения из БД. Попробуйте позже.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		if user == nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Пользователь с таким пропуском не найден."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Пользователь с таким пропуском не найден.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 
 		// Сверяем пароль
 		if user.Password != text {
-			bot.Send(tgbotapi.NewMessage(chatID, "❌ Неверный пароль. Попробуйте ещё раз."))
+			msg := tgbotapi.NewMessage(chatID, "❌ Неверный пароль. Попробуйте ещё раз.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 
 		// Привязываем пользователя к текущему чату (устанавливаем telegram_id)
 		user.TelegramID = chatID
 		if err := auth.SaveUser(user); err != nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 
-		bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("🎉 Вход выполнен успешно! Добро пожаловать, %s", user.Name)))
+		msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("🎉 Вход выполнен успешно! Добро пожаловать, %s", user.Name))
+		sendAndTrackMessage(bot, msg)
 
-		// Вместо sendLoggedInMenu используем sendMainMenu напрямую:
+		// Удаляем все сообщения из чата
+		deleteMessages(chatID, bot)
+
+		// Показываем главное меню
 		sendMainMenu(chatID, bot, user)
 
 		// Сбрасываем логин-состояния

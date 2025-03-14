@@ -9,6 +9,8 @@ import (
 )
 
 // processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
+// processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
+// processRegistrationMessage — обрабатывает ввод от пользователя в ходе регистрации.
 func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, text string) {
 	chatID := update.Message.Chat.ID
 	tempData, ok := userTempDataMap[chatID]
@@ -21,38 +23,45 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 	// Регистрация для студентов: ввод регистрационного кода (пропуска)
 	case StateWaitingForPass:
 		if tempData.Faculty == "" || tempData.Group == "" {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка: факультет или группа не выбраны."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка: факультет или группа не выбраны.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		userInDB, err := auth.FindUnregisteredUser(tempData.Faculty, tempData.Group, text)
 		if err != nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при поиске в БД. Попробуйте позже."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка при поиске в БД. Попробуйте позже.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		if userInDB == nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "❌ Неверный пропуск (регистрационный код). Попробуйте ещё раз."))
+			msg := tgbotapi.NewMessage(chatID, "❌ Неверный пропуск (регистрационный код). Попробуйте ещё раз.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		tempData.FoundUserID = userInDB.ID
 		userStates[chatID] = StateWaitingForPassword
-		bot.Send(tgbotapi.NewMessage(chatID, "✅ Код принят. Теперь введите ваш новый пароль:"))
+		msg := tgbotapi.NewMessage(chatID, "✅ Код принят. Теперь введите ваш новый пароль:")
+		sendAndTrackMessage(bot, msg)
 		return
 
 	// Завершение регистрации для студентов: ввод пароля
 	case StateWaitingForPassword:
 		if tempData.FoundUserID == 0 {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка регистрации. Начните заново с /register."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка регистрации. Начните заново с /register.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		userInDB, err := auth.GetUserByID(tempData.FoundUserID)
 		if err != nil || userInDB == nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Пользователь не найден (возможно, уже зарегистрирован)."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Пользователь не найден (возможно, уже зарегистрирован).")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		userInDB.TelegramID = chatID
 		userInDB.Password = text
 		if err := auth.SaveUser(userInDB); err != nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 
@@ -63,8 +72,16 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 			userInDB.Group,
 			userInDB.Role,
 		)
-		bot.Send(tgbotapi.NewMessage(chatID, finalMsg))
+		msg := tgbotapi.NewMessage(chatID, finalMsg)
+		sendAndTrackMessage(bot, msg)
+
+		// Удаляем все сообщения из чата
+		deleteMessages(chatID, bot)
+
+		// Показываем главное меню
 		sendMainMenu(chatID, bot, userInDB)
+
+		// Сбрасываем состояния
 		delete(userStates, chatID)
 		delete(userTempDataMap, chatID)
 		return
@@ -73,41 +90,49 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 	case StateTeacherWaitingForPass:
 		userInDB, err := auth.GetUserByRegCode(text)
 		if err != nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при поиске в БД. Попробуйте позже."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка при поиске в БД. Попробуйте позже.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		if userInDB == nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "❌ Неверный пропуск (регистрационный код). Попробуйте ещё раз."))
+			msg := tgbotapi.NewMessage(chatID, "❌ Неверный пропуск (регистрационный код). Попробуйте ещё раз.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		if userInDB.Role != "teacher" {
-			bot.Send(tgbotapi.NewMessage(chatID, "❌ Этот код не принадлежит преподавателю."))
+			msg := tgbotapi.NewMessage(chatID, "❌ Этот код не принадлежит преподавателю.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		if userInDB.TelegramID != 0 {
-			bot.Send(tgbotapi.NewMessage(chatID, "❌ Этот код уже зарегистрирован другим пользователем."))
+			msg := tgbotapi.NewMessage(chatID, "❌ Этот код уже зарегистрирован другим пользователем.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		tempData.FoundUserID = userInDB.ID
 		userStates[chatID] = StateTeacherWaitingForPassword
-		bot.Send(tgbotapi.NewMessage(chatID, "✅ Код принят. Теперь введите ваш новый пароль:"))
+		msg := tgbotapi.NewMessage(chatID, "✅ Код принят. Теперь введите ваш новый пароль:")
+		sendAndTrackMessage(bot, msg)
 		return
 
 	// Завершение регистрации для преподавателей: ввод пароля
 	case StateTeacherWaitingForPassword:
 		if tempData.FoundUserID == 0 {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка регистрации. Начните заново с /register."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка регистрации. Начните заново с /register.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		userInDB, err := auth.GetUserByID(tempData.FoundUserID)
 		if err != nil || userInDB == nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Пользователь не найден (возможно, уже зарегистрирован)."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Пользователь не найден (возможно, уже зарегистрирован).")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		userInDB.TelegramID = chatID
 		userInDB.Password = text
 		if err := auth.SaveUser(userInDB); err != nil {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 
@@ -116,8 +141,16 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 			userInDB.Name,
 			userInDB.Role,
 		)
-		bot.Send(tgbotapi.NewMessage(chatID, finalMsg))
+		msg := tgbotapi.NewMessage(chatID, finalMsg)
+		sendAndTrackMessage(bot, msg)
+
+		// Удаляем все сообщения из чата
+		deleteMessages(chatID, bot)
+
+		// Показываем главное меню
 		sendMainMenu(chatID, bot, userInDB)
+
+		// Сбрасываем состояния
 		delete(userStates, chatID)
 		delete(userTempDataMap, chatID)
 		return
@@ -125,6 +158,8 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 }
 
 // RegistrationProcessCallback — обрабатывает callback‑запросы при выборе роли, факультета и группы.
+// RegistrationProcessCallback — обрабатывает callback-и при выборе роли, факультета, группы и т.д.
+// RegistrationProcessCallback — обрабатывает callback-и при выборе роли, факультета, группы и т.д.
 // RegistrationProcessCallback — обрабатывает callback-и при выборе роли, факультета, группы и т.д.
 func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	chatID := callback.Message.Chat.ID
@@ -144,16 +179,21 @@ func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi
 		if userStates[chatID] != "" {
 			delete(userStates, chatID)
 			delete(userTempDataMap, chatID)
-			bot.Send(tgbotapi.NewMessage(chatID, "Регистрация отменена."))
 		}
 		// Сбрасываем состояние логина (если вдруг он был)
 		if loginStates[chatID] != "" {
 			delete(loginStates, chatID)
 			delete(loginTempDataMap, chatID)
-			bot.Send(tgbotapi.NewMessage(chatID, "Вход отменён."))
 		}
 
-		// Показываем главное меню (для авторизованного или нет — зависит от того, был ли пользователь в системе)
+		// Удаляем все сообщения из чата
+		deleteMessages(chatID, bot)
+
+		// Отправляем сообщение об отмене
+		msg := tgbotapi.NewMessage(chatID, "❌ Процесс отменён.")
+		sendAndTrackMessage(bot, msg)
+
+		// Показываем главное меню
 		user, _ := auth.GetUserByTelegramID(chatID)
 		sendMainMenu(chatID, bot, user)
 		return
@@ -189,7 +229,8 @@ func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi
 			userTempDataMap[chatID].Role = "teacher"
 			userStates[chatID] = StateTeacherWaitingForPass
 			bot.Request(tgbotapi.NewCallback(callback.ID, "Преподаватель выбран"))
-			bot.Send(tgbotapi.NewMessage(chatID, "Введите ваш регистрационный код (например, TR-345):"))
+			msg := tgbotapi.NewMessage(chatID, "Введите ваш регистрационный код (например, TR-345):")
+			sendAndTrackMessage(bot, msg)
 		}
 
 	case StateWaitingForFaculty:
@@ -205,7 +246,8 @@ func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi
 		userTempDataMap[chatID].Group = data
 		userStates[chatID] = StateWaitingForPass
 		bot.Request(tgbotapi.NewCallback(callback.ID, fmt.Sprintf("✅ Группа '%s' выбрана", data)))
-		bot.Send(tgbotapi.NewMessage(chatID, "🔐 Введите ваш регистрационный код (например, ST-456):"))
+		msg := tgbotapi.NewMessage(chatID, "🔐 Введите ваш регистрационный код (например, ST-456):")
+		sendAndTrackMessage(bot, msg)
 
 	default:
 		// Если состояние не соответствует ни одному ожидаемому шагу
@@ -213,6 +255,7 @@ func RegistrationProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi
 	}
 }
 
+// sendRoleSelection — отправляет inline‑кнопки для выбора роли.
 // sendRoleSelection — отправляет inline‑кнопки для выбора роли.
 func sendRoleSelection(chatID int64, bot *tgbotapi.BotAPI) {
 	var rows [][]tgbotapi.InlineKeyboardButton
@@ -230,9 +273,10 @@ func sendRoleSelection(chatID int64, bot *tgbotapi.BotAPI) {
 
 	msg := tgbotapi.NewMessage(chatID, "👤 Выберите вашу роль (или отмените операцию):")
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
-	bot.Send(msg)
+	sendAndTrackMessage(bot, msg)
 }
 
+// sendFacultySelection — отправляет inline‑кнопки факультетов с использованием кэша.
 // sendFacultySelection — отправляет inline‑кнопки факультетов с использованием кэша.
 func sendFacultySelection(chatID int64, bot *tgbotapi.BotAPI) {
 	facs := GetFaculties()
@@ -240,7 +284,8 @@ func sendFacultySelection(chatID int64, bot *tgbotapi.BotAPI) {
 		var err error
 		facs, err = GetAllFaculties()
 		if err != nil || len(facs) == 0 {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Нет факультетов для выбора."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Нет факультетов для выбора.")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		SetFaculties(facs)
@@ -261,9 +306,10 @@ func sendFacultySelection(chatID int64, bot *tgbotapi.BotAPI) {
 
 	msg := tgbotapi.NewMessage(chatID, "📚 Выберите ваш факультет (или отмените операцию):")
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
-	bot.Send(msg)
+	sendAndTrackMessage(bot, msg)
 }
 
+// sendGroupSelection — отправляет inline‑кнопки групп для выбранного факультета с использованием кэша.
 // sendGroupSelection — отправляет inline‑кнопки групп для выбранного факультета с использованием кэша.
 func sendGroupSelection(chatID int64, facultyName string, bot *tgbotapi.BotAPI) {
 	groups := GetGroups(facultyName)
@@ -271,7 +317,8 @@ func sendGroupSelection(chatID int64, facultyName string, bot *tgbotapi.BotAPI) 
 		var err error
 		groups, err = GetGroupsByFaculty(facultyName)
 		if err != nil || len(groups) == 0 {
-			bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Нет групп для факультета "+facultyName+"."))
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Нет групп для факультета "+facultyName+".")
+			sendAndTrackMessage(bot, msg)
 			return
 		}
 		SetGroups(facultyName, groups)
@@ -292,5 +339,5 @@ func sendGroupSelection(chatID int64, facultyName string, bot *tgbotapi.BotAPI) 
 
 	msg := tgbotapi.NewMessage(chatID, "📖 Выберите вашу группу (или отмените операцию):")
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
-	bot.Send(msg)
+	sendAndTrackMessage(bot, msg)
 }

@@ -16,17 +16,19 @@ const (
 )
 
 // loginData хранит временные данные логина
-type loginData struct {
-	RegCode string
-	MsgIDs  []int
-}
-
 // tempUserData – временные данные при регистрации
 type tempUserData struct {
 	Faculty     string
 	Group       string
 	FoundUserID int64
 	Role        string // Новое поле для хранения выбранной роли
+	MsgIDs      []int  // Список MessageID для удаления сообщений
+}
+
+// loginData хранит временные данные логина
+type loginData struct {
+	RegCode string
+	MsgIDs  []int // Список MessageID для удаления сообщений
 }
 
 // userStates и прочие переменные для хранения состояний
