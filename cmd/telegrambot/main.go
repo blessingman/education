@@ -36,6 +36,12 @@ func main() {
 			log.Printf("Ошибка установки команд: %v", err)
 		}
 	*/
+	deleteCmds := tgbotapi.NewDeleteMyCommands()
+	// deleteCmds.Scope = &tgbotapi.BotCommandScopeDefault{} // опционально
+	_, err = bot.Request(deleteCmds)
+	if err != nil {
+		log.Println("Ошибка удаления команд:", err)
+	}
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
