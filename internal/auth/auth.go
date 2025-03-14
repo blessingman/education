@@ -11,12 +11,13 @@ import (
 // SaveUser записывает / обновляет пользователя (по id).
 func SaveUser(u *models.User) error {
 	_, err := db.DB.Exec(`
-		INSERT INTO users (id, telegram_id, role, name, group_name, password, registration_code)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO users (id, telegram_id, role, name, faculty, group_name, password, registration_code)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			telegram_id = excluded.telegram_id,
 			role = excluded.role,
 			name = excluded.name,
+			faculty = excluded.faculty,
 			group_name = excluded.group_name,
 			password = excluded.password,
 			registration_code = excluded.registration_code
@@ -25,6 +26,7 @@ func SaveUser(u *models.User) error {
 		u.TelegramID,
 		u.Role,
 		u.Name,
+		u.Faculty,
 		u.Group,
 		u.Password,
 		u.RegistrationCode,
@@ -61,12 +63,12 @@ func FindUnregisteredUser(faculty, group, pass string) (*models.User, error) {
 // GetUserByTelegramID проверяет, есть ли пользователь с данным telegram_id
 func GetUserByTelegramID(telegramID int64) (*models.User, error) {
 	row := db.DB.QueryRow(`
-		SELECT id, telegram_id, role, name, group_name, password, registration_code
+		SELECT id, telegram_id, role, name, faculty, group_name, password, registration_code
 		FROM users
 		WHERE telegram_id = ?
 	`, telegramID)
 	var u models.User
-	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Group, &u.Password, &u.RegistrationCode)
+	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Faculty, &u.Group, &u.Password, &u.RegistrationCode)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -85,12 +87,12 @@ func DeleteUserByTelegramID(telegramID int64) error {
 // GetUserByRegCode ищет пользователя (telegram_id != 0 или 0) по registration_code
 func GetUserByRegCode(regCode string) (*models.User, error) {
 	row := db.DB.QueryRow(`
-		SELECT id, telegram_id, role, name, group_name, password, registration_code
+		SELECT id, telegram_id, role, name, faculty, group_name, password, registration_code
 		FROM users
 		WHERE registration_code = ?
 	`, regCode)
 	var u models.User
-	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Group, &u.Password, &u.RegistrationCode)
+	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Faculty, &u.Group, &u.Password, &u.RegistrationCode)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -100,14 +102,15 @@ func GetUserByRegCode(regCode string) (*models.User, error) {
 	return &u, nil
 }
 
+// GetUserByID обновлена аналогичным образом
 func GetUserByID(id int64) (*models.User, error) {
 	row := db.DB.QueryRow(`
-		SELECT id, telegram_id, role, name, group_name, password, registration_code
+		SELECT id, telegram_id, role, name, faculty, group_name, password, registration_code
 		FROM users
 		WHERE id = ?
 	`, id)
 	var u models.User
-	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Group, &u.Password, &u.RegistrationCode)
+	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Faculty, &u.Group, &u.Password, &u.RegistrationCode)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

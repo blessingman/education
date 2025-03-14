@@ -27,13 +27,14 @@ func createTables() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Таблица users
+	// Таблица users с добавленным столбцом faculty
 	_, err := DB.ExecContext(ctx, `
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
             role TEXT,
             name TEXT,
+            faculty TEXT,
             group_name TEXT,
             password TEXT,
             registration_code TEXT UNIQUE
@@ -43,7 +44,7 @@ func createTables() {
 		log.Panicf("Ошибка создания таблицы users: %v", err)
 	}
 
-	// Таблица faculty_groups
+	// Таблица faculty_groups без изменений
 	_, err = DB.ExecContext(ctx, `
         CREATE TABLE IF NOT EXISTS faculty_groups (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +60,7 @@ func createTables() {
 	seedFaculties()
 }
 
-// seedUsers вставляет «предустановленных» участников (ST-456 …) если таблица пуста
+// seedUsers – добавляем поле faculty (можно оставить пустым, если нет данных)
 func seedUsers() {
 	var count int
 	err := DB.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
@@ -68,18 +69,18 @@ func seedUsers() {
 	}
 	if count == 0 {
 		_, err = DB.Exec(`
-			INSERT INTO users (telegram_id, role, name, group_name, password, registration_code)
+			INSERT INTO users (telegram_id, role, name, faculty, group_name, password, registration_code)
 			VALUES
-			 (0, 'student', 'Иван Иванов',       'AA-25-07', '', 'ST-456'),
-			 (0, 'teacher', 'Петр Петров',       'BB-10-07', '', 'TR-345'),
-			 (0, 'student', 'Светлана Соколова', 'AA-25-08', '', 'ST-457'),
-			 (0, 'student', 'Мария Смирнова',    'CC-15-01', '', 'ST-459'),
-			 (0, 'teacher', 'Алексей Козлов',    'BB-10-08', '', 'TR-346'),
-			 (0, 'admin',   'Елена Васильева',   'CC-15-02', '', 'AD-314'),
-			 (0, 'student', 'Сергей Иванов',     'AA-25-07', '', 'ST-458'),
-			 (0, 'teacher', 'Ольга Новикова',    'BB-10-07', '', 'TR-347'),
-			 (0, 'student', 'Дмитрий Соколов',   'CC-15-01', '', 'ST-460'),
-			 (0, 'student', 'Анна Кузнецова',    'EE-20-01', '', 'ST-461')
+			 (0, 'student', 'Иван Иванов', '', 'AA-25-07', '', 'ST-456'),
+			 (0, 'teacher', 'Петр Петров', '', 'BB-10-07', '', 'TR-345'),
+			 (0, 'student', 'Светлана Соколова', '', 'AA-25-08', '', 'ST-457'),
+			 (0, 'student', 'Мария Смирнова', '', 'CC-15-01', '', 'ST-459'),
+			 (0, 'teacher', 'Алексей Козлов', '', 'BB-10-08', '', 'TR-346'),
+			 (0, 'admin',   'Елена Васильева', '', 'CC-15-02', '', 'AD-314'),
+			 (0, 'student', 'Сергей Иванов', '', 'AA-25-07', '', 'ST-458'),
+			 (0, 'teacher', 'Ольга Новикова', '', 'BB-10-07', '', 'TR-347'),
+			 (0, 'student', 'Дмитрий Соколов', '', 'CC-15-01', '', 'ST-460'),
+			 (0, 'student', 'Анна Кузнецова', '', 'EE-20-01', '', 'ST-461')
 			 ON CONFLICT(registration_code) DO UPDATE SET telegram_id=0;
 		`)
 		if err != nil {

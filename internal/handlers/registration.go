@@ -29,6 +29,7 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 			sendAndTrackMessage(bot, msg)
 			return
 		}
+		// Поиск студента по выбранным факультету, группе и введённому регистрационному коду
 		userInDB, err := auth.FindUnregisteredUser(tempData.Faculty, tempData.Group, text)
 		if err != nil {
 			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка при поиске в БД. Попробуйте позже.")
@@ -60,15 +61,16 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 		}
 		userInDB.TelegramID = chatID
 		userInDB.Password = text
-		userInDB.Faculty = tempData.Faculty // Переносим Faculty
-		userInDB.Group = tempData.Group     // Переносим Group
+		// Переносим поле Faculty, выбранное ранее пользователем
+		userInDB.Faculty = tempData.Faculty
+		userInDB.Group = tempData.Group
 		if err := auth.SaveUser(userInDB); err != nil {
 			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже.")
 			sendAndTrackMessage(bot, msg)
 			return
 		}
 
-		// Показываем главное меню с данными пользователя без удаления сообщений
+		// Показываем главное меню с данными пользователя
 		sendMainMenu(chatID, bot, userInDB)
 
 		// Сбрасываем состояния
@@ -118,16 +120,15 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 		}
 		userInDB.TelegramID = chatID
 		userInDB.Password = text
+		// Для преподавателя можно не задавать факультет через процесс регистрации,
+		// если факультет уже прописан в БД или определяется иным способом.
 		if err := auth.SaveUser(userInDB); err != nil {
 			msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка сохранения пользователя. Попробуйте позже.")
 			sendAndTrackMessage(bot, msg)
 			return
 		}
 
-		// Показываем главное меню с данными пользователя без удаления сообщений
 		sendMainMenu(chatID, bot, userInDB)
-
-		// Сбрасываем состояния
 		delete(userStates, chatID)
 		delete(userTempDataMap, chatID)
 		return
