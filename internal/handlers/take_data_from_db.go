@@ -95,11 +95,11 @@ func sendGroupSelection(chatID int64, facultyName string, bot *tgbotapi.BotAPI) 
 // Если один и тот же курс привязан к разным группам, курс будет возвращён только один раз.
 func GetCoursesByTeacherID(teacherID int64) ([]models.Course, error) {
 	rows, err := db.DB.Query(`
-		SELECT c.id, c.name, c.description
+		SELECT c.id, c.name
 		FROM teacher_course_groups tcg
 		JOIN courses c ON c.id = tcg.course_id
 		WHERE tcg.teacher_id = ?
-		GROUP BY c.id, c.name, c.description
+		GROUP BY c.id, c.name
 	`, teacherID)
 	if err != nil {
 		return nil, err
@@ -109,7 +109,7 @@ func GetCoursesByTeacherID(teacherID int64) ([]models.Course, error) {
 	var courses []models.Course
 	for rows.Next() {
 		var course models.Course
-		if err := rows.Scan(&course.ID, &course.Name, &course.Description); err != nil {
+		if err := rows.Scan(&course.ID, &course.Name); err != nil {
 			return nil, err
 		}
 		courses = append(courses, course)
@@ -118,12 +118,12 @@ func GetCoursesByTeacherID(teacherID int64) ([]models.Course, error) {
 }
 
 // GetTeacherGroups возвращает список групп, с которыми связан преподаватель в таблице teacher_course_groups.
-func GetTeacherGroups(teacherID int64) ([]models.TeacherCourseGroup, error) {
+func GetTeacherGroups(teacherRegCode string) ([]models.TeacherCourseGroup, error) {
 	rows, err := db.DB.Query(`
-		SELECT id, teacher_id, group_name
+		SELECT id, teacher_reg_code, course_id, group_name
 		FROM teacher_course_groups
-		WHERE teacher_id = ?
-	`, teacherID)
+		WHERE teacher_reg_code = ?
+	`, teacherRegCode)
 	if err != nil {
 		return nil, err
 	}
@@ -132,10 +132,58 @@ func GetTeacherGroups(teacherID int64) ([]models.TeacherCourseGroup, error) {
 	var groups []models.TeacherCourseGroup
 	for rows.Next() {
 		var tg models.TeacherCourseGroup
-		if err := rows.Scan(&tg.ID, &tg.TeacherID, &tg.GroupName); err != nil {
+		if err := rows.Scan(&tg.ID, &tg.TeacherRegCode, &tg.CourseID, &tg.GroupName); err != nil {
 			return nil, err
 		}
 		groups = append(groups, tg)
 	}
 	return groups, nil
+}
+
+// Получаем группы преподавателя по его регистрационному коду
+func GetTeacherGroupsByRegCode(teacherRegCode string) ([]models.TeacherCourseGroup, error) {
+	rows, err := db.DB.Query(`
+        SELECT id, teacher_reg_code, course_id, group_name
+        FROM teacher_course_groups
+        WHERE teacher_reg_code = ?
+    `, teacherRegCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []models.TeacherCourseGroup
+	for rows.Next() {
+		var tg models.TeacherCourseGroup
+		if err := rows.Scan(&tg.ID, &tg.TeacherRegCode, &tg.CourseID, &tg.GroupName); err != nil {
+			return nil, err
+		}
+		groups = append(groups, tg)
+	}
+	return groups, nil
+}
+
+// Получаем курсы по регистрационному коду преподавателя
+func GetCoursesByTeacherRegCode(teacherRegCode string) ([]models.Course, error) {
+	rows, err := db.DB.Query(`
+        SELECT c.id, c.name
+        FROM teacher_course_groups tcg
+        JOIN courses c ON c.id = tcg.course_id
+        WHERE tcg.teacher_reg_code = ?
+        GROUP BY c.id, c.name
+    `, teacherRegCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var courses []models.Course
+	for rows.Next() {
+		var course models.Course
+		if err := rows.Scan(&course.ID, &course.Name); err != nil {
+			return nil, err
+		}
+		courses = append(courses, course)
+	}
+	return courses, nil
 }

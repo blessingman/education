@@ -59,8 +59,7 @@ func createTables() {
 	_, err = DB.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS courses (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL,
-			description TEXT
+			name TEXT NOT NULL
 		);
 	`)
 	if err != nil {
@@ -71,10 +70,9 @@ func createTables() {
 	_, err = DB.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS teacher_course_groups (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			teacher_id INTEGER NOT NULL,
+			teacher_reg_code TEXT NOT NULL,
 			course_id INTEGER NOT NULL,
 			group_name TEXT NOT NULL,
-			FOREIGN KEY(teacher_id) REFERENCES users(id),
 			FOREIGN KEY(course_id) REFERENCES courses(id)
 		);
 	`)
@@ -171,12 +169,12 @@ func seedCourses() {
 	}
 	if count == 0 {
 		_, err = DB.Exec(`
-			INSERT INTO courses (name, description)
+			INSERT INTO courses (name)
 			VALUES
-			 ('Математика', 'Базовый курс математики'),
-			 ('Программирование', 'Основы языков программирования'),
-			 ('Физика', 'Теоретическая физика'),
-			 ('Экономика', 'Микро- и макроэкономика')
+				('Математика'),
+				('Программирование'),
+				('Физика'),
+				('Экономика')
 		`)
 		if err != nil {
 			log.Panicf("Ошибка вставки курсов: %v", err)
@@ -195,13 +193,13 @@ func seedTeacherCourseGroups() {
 		// По скриншоту: Пётр Петров (id=6), Алексей Козлов (id=7), Ольга Новикова (id=8).
 		// Courses: 1=Математика, 2=Программирование, 3=Физика, 4=Экономика (пример).
 		_, err = DB.Exec(`
-			INSERT INTO teacher_course_groups (teacher_id, course_id, group_name)
+			INSERT INTO teacher_course_groups (teacher_reg_code, course_id, group_name)
 			VALUES
-			 (6, 1, 'BB-10-07'),  -- Пётр Петров -> Математика -> BB-10-07
-			 (6, 1, 'BB-10-08'),  -- Пётр Петров -> Математика -> BB-10-08
-			 (7, 2, 'BB-10-08'),  -- Алексей Козлов -> Программирование -> BB-10-08
-			 (7, 2, 'CC-15-01'),  -- Алексей Козлов -> Программирование -> CC-15-01
-			 (8, 3, 'BB-10-07')   -- Ольга Новикова -> Физика -> BB-10-07
+			('TR-345', 1, 'BB-10-07'),
+			('TR-345', 1, 'BB-10-08'),
+			('TR-346', 2, 'BB-10-08'),
+			('TR-346', 2, 'CC-15-01'),
+			('TR-347', 3, 'BB-10-07');
 		`)
 		if err != nil {
 			log.Panicf("Ошибка вставки teacher_course_groups: %v", err)

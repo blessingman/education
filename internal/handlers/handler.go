@@ -91,28 +91,9 @@ func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
 		greetedUsersMu.Unlock()
 	} else if user != nil {
 		if user.Role == "teacher" {
-			// Для преподавателя получаем курсы и группы
-			courses, err := GetCoursesByTeacherID(user.ID)
-			if err != nil {
-				courses = []models.Course{}
-			}
-			groups, err := GetTeacherGroups(user.ID)
-			if err != nil {
-				groups = []models.TeacherCourseGroup{}
-			}
-			// Формируем список названий курсов и групп
-			var coursesText, groupsText string
-			for _, c := range courses {
-				coursesText += c.Name + ", "
-			}
-			coursesText = strings.TrimSuffix(coursesText, ", ")
-			for _, g := range groups {
-				groupsText += g.GroupName + ", "
-			}
-			groupsText = strings.TrimSuffix(groupsText, ", ")
-
-			firstMsgText = fmt.Sprintf("👤 Привет, %s!\n🏫 Факультет: %s\n📚 Курсы: %s\n📚 Группы: %s\n🔑 Роль: %s",
-				user.Name, user.Faculty, coursesText, groupsText, user.Role)
+			// Для преподавателя показываем базовую информацию без курсов и групп
+			firstMsgText = fmt.Sprintf("👤 Привет, %s!\n🏫 Факультет: %s\n🔑 Роль: %s",
+				user.Name, user.Faculty, user.Role)
 		} else {
 			// Для студента
 			firstMsgText = fmt.Sprintf("👤 Привет, %s!\n🏫 Факультет: %s\n📚 Группа: %s\n🔑 Роль: %s",
@@ -141,6 +122,11 @@ func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
 			tgbotapi.NewInlineKeyboardButtonData("📚 Материалы", "menu_materials"),
 		))
 		if user.Role == "teacher" {
+			// Новая кнопка для преподавателя
+			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("📋 Мои предметы и группы", "menu_teacher_courses"),
+			))
+			// Существующие кнопки для преподавателя
 			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("🛠 Изменить расписание", "menu_edit_schedule"),
 				tgbotapi.NewInlineKeyboardButtonData("🛠 Изменить материалы", "menu_edit_materials"),
@@ -150,9 +136,6 @@ func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
 			tgbotapi.NewInlineKeyboardButtonData("🚪 Выход", "menu_logout"),
 		))
 	}
-	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("❓ Справка", "menu_help"),
-	))
 
 	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
 	msg2 := tgbotapi.NewMessage(chatID, "Выберите действие:")
@@ -348,6 +331,50 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		msg := tgbotapi.NewMessage(chatID, "Здесь можно загрузить или обновить учебные материалы (реализуйте по-своему).")
 		sendAndTrackMessage(bot, msg)
 		return
+	case "menu_teacher_courses":
+		// Получаем пользователя по chatID
+		user, err := auth.GetUserByTelegramID(chatID)
+		if err != nil || user == nil || user.Role != "teacher" {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Нет доступа"))
+			return
+		}
+
+		// Используем registration_code для получения данных
+		courses, err := GetCoursesByTeacherRegCode(user.RegistrationCode)
+		if err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения курсов"))
+			return
+		}
+		groups, err := GetTeacherGroupsByRegCode(user.RegistrationCode)
+		if err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения групп"))
+			return
+		}
+
+		// Группируем группы по идентификатору курса
+		courseGroups := make(map[int64][]string)
+		for _, g := range groups {
+			courseGroups[g.CourseID] = append(courseGroups[g.CourseID], g.GroupName)
+		}
+
+		// Формирование текстового сообщения
+		var msgText string
+		for _, course := range courses {
+			groupsForCourse := courseGroups[course.ID]
+			if len(groupsForCourse) == 0 {
+				msgText += fmt.Sprintf("📘 %s: нет групп\n", course.Name)
+			} else {
+				msgText += fmt.Sprintf("📘 %s: %s\n", course.Name, strings.Join(groupsForCourse, ", "))
+			}
+		}
+		if msgText == "" {
+			msgText = "Нет данных для отображения."
+		}
+
+		// Отправка сообщения
+		msg := tgbotapi.NewMessage(chatID, msgText)
+		sendAndTrackMessage(bot, msg)
+
 	}
 
 	// Если callback не относится к главному меню, передаём обработку регистрации/логина

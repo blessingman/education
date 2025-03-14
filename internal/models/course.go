@@ -1,7 +1,6 @@
 package models
 
 type Course struct {
-	ID          int64
-	Name        string
-	Description string
+	ID   int64
+	Name string
 }
