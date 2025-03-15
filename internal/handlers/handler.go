@@ -4,7 +4,6 @@ import (
 	"education/internal/auth"
 	"education/internal/models"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -247,69 +246,62 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	data := callback.Data
 
 	// Обработка пагинации расписания
-	if strings.HasPrefix(data, "schedule_page_") {
-		// Извлекаем номер страницы из callback data
-		pageStr := strings.TrimPrefix(data, "schedule_page_")
-		newPage, err := strconv.Atoi(pageStr)
+	// Обработка навигации по неделям
+	if strings.HasPrefix(data, "week_prev_") {
+		// Извлекаем дату начала текущей недели из callback data
+		currentWeekStr := strings.TrimPrefix(data, "week_prev_")
+		currentWeekStart, err := time.Parse("2006-01-02", currentWeekStr)
 		if err != nil {
-			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обработки страницы"))
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обработки даты"))
 			return
 		}
-
-		// Задаём количество записей на страницу
-		limit := 5
-		offset := (newPage - 1) * limit
-
-		// Получаем данные пользователя
+		// Переходим на предыдущую неделю
+		newWeekStart := currentWeekStart.AddDate(0, 0, -7)
 		user, err := auth.GetUserByTelegramID(chatID)
 		if err != nil || user == nil {
 			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения данных пользователя"))
 			return
 		}
+		ShowScheduleWeek(chatID, bot, user, newWeekStart)
+		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
+		return
+	}
 
-		// Выбираем расписание в зависимости от роли пользователя
-		var schedules []models.Schedule
-		var totalRecords int
-		if user.Role == "teacher" {
-			schedules, err = GetScheduleByTeacherPaginated(user.RegistrationCode, limit, offset)
-			if err != nil {
-				bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения расписания"))
-				return
-			}
-			totalRecords, err = CountSchedulesByTeacher(user.RegistrationCode)
-		} else {
-			schedules, err = GetScheduleByGroupPaginated(user.Group, limit, offset)
-			if err != nil {
-				bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения расписания"))
-				return
-			}
-			totalRecords, err = CountSchedulesByGroup(user.Group)
-		}
+	if strings.HasPrefix(data, "week_next_") {
+		// Извлекаем дату начала текущей недели
+		currentWeekStr := strings.TrimPrefix(data, "week_next_")
+		currentWeekStart, err := time.Parse("2006-01-02", currentWeekStr)
 		if err != nil {
-			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка подсчёта записей"))
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обработки даты"))
 			return
 		}
-
-		// Вычисляем общее количество страниц
-		totalPages := (totalRecords + limit - 1) / limit
-
-		// Форматируем новый текст сообщения с расписанием
-		newText := FormatSchedulesGroupedByDay(schedules, newPage, totalPages, user.Role, user)
-		// Формируем новую клавиатуру с пагинацией (используя функцию с прямой навигацией по номерам страниц)
-		newKeyboard := BuildPaginationKeyboardWithNumbers(newPage, totalPages, "schedule")
-
-		// Создаем объект для редактирования сообщения
-		editMsg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, newText)
-		editMsg.ParseMode = "HTML" // или "Markdown", в зависимости от используемого синтаксиса
-		editMsg.ReplyMarkup = &newKeyboard
-
-		// Отправляем измененное сообщение
-		if _, err := bot.Send(editMsg); err != nil {
-			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обновления расписания"))
+		// Переходим на следующую неделю
+		newWeekStart := currentWeekStart.AddDate(0, 0, 7)
+		user, err := auth.GetUserByTelegramID(chatID)
+		if err != nil || user == nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения данных пользователя"))
 			return
 		}
+		ShowScheduleWeek(chatID, bot, user, newWeekStart)
+		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
+		return
+	}
 
-		// Отправляем callback ответ для скрытия индикатора загрузки
+	// Обработка навигации по конкретному дню
+	if strings.HasPrefix(data, "day_") {
+		// Извлекаем выбранную дату
+		dayStr := strings.TrimPrefix(data, "day_")
+		selectedDay, err := time.Parse("2006-01-02", dayStr)
+		if err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обработки даты"))
+			return
+		}
+		user, err := auth.GetUserByTelegramID(chatID)
+		if err != nil || user == nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения данных пользователя"))
+			return
+		}
+		ShowScheduleDay(chatID, bot, user, selectedDay)
 		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
 		return
 	}
@@ -342,7 +334,13 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	case "menu_schedule":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "🗓 Расписание"))
 		user, _ := auth.GetUserByTelegramID(chatID)
-		if err := ShowSchedule(chatID, bot, user); err != nil {
+		now := time.Now()
+		offset := int(now.Weekday())
+		if offset == 0 {
+			offset = 7
+		}
+		weekStart := now.AddDate(0, 0, -(offset - 1))
+		if err := ShowScheduleWeek(chatID, bot, user, weekStart); err != nil {
 			fmt.Println("Ошибка при отправке расписания:", err)
 		}
 		return

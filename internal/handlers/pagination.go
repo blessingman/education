@@ -120,26 +120,6 @@ func GetScheduleByTeacherPaginated(teacherRegCode string, limit, offset int) ([]
 	return schedules, rows.Err()
 }
 
-// FormatPaginatedSchedules формирует текст сообщения с расписанием и информацией о текущей странице.
-func FormatPaginatedSchedules(schedules []models.Schedule, currentPage, totalPages int, mode string, user *models.User) string {
-	if len(schedules) == 0 {
-		return "Расписание не найдено."
-	}
-
-	msgText := fmt.Sprintf("Расписание (страница %d из %d):\n\n", currentPage, totalPages)
-	for _, s := range schedules {
-		tStr := s.ScheduleTime.Format("02.01.2006 15:04")
-		if mode == "teacher" {
-			// Для преподавателя выводим время, описание и группу
-			msgText += fmt.Sprintf("• %s: %s (группа: %s)\n", tStr, s.Description, s.GroupName)
-		} else {
-			// Для студента выводим время, описание и регистрационный код преподавателя
-			msgText += fmt.Sprintf("• %s: %s (Преп.: %s)\n", tStr, s.Description, s.TeacherRegCode)
-		}
-	}
-	return msgText
-}
-
 // BuildPaginationKeyboard создаёт inline‑клавиатуру для навигации по страницам.
 // callbackPrefix используется для формирования callback data (например, "schedule" для расписания).
 func BuildPaginationKeyboard(currentPage, totalPages int, callbackPrefix string) tgbotapi.InlineKeyboardMarkup {
@@ -172,53 +152,27 @@ func BuildPaginationKeyboard(currentPage, totalPages int, callbackPrefix string)
 	return keyboard
 }
 
-func BuildPaginationKeyboardWithNumbers(currentPage, totalPages int, callbackPrefix string) tgbotapi.InlineKeyboardMarkup {
-	const maxButtons = 7
-	var rows [][]tgbotapi.InlineKeyboardButton
+func BuildWeekNavigationKeyboard(weekStart time.Time) tgbotapi.InlineKeyboardMarkup {
+	// Вычисляем даты для предыдущей и следующей недели
+	prevWeek := weekStart.AddDate(0, 0, -7)
+	nextWeek := weekStart.AddDate(0, 0, 7)
 
-	// 1) Верхняя строка: "В начало" / "Назад"
-	var topRow []tgbotapi.InlineKeyboardButton
-	if currentPage > 1 {
-		topRow = append(topRow, tgbotapi.NewInlineKeyboardButtonData("<<", fmt.Sprintf("%s_page_%d", callbackPrefix, 1)))
-		topRow = append(topRow, tgbotapi.NewInlineKeyboardButtonData("⬅️", fmt.Sprintf("%s_page_%d", callbackPrefix, currentPage-1)))
-	}
-	if len(topRow) > 0 {
-		rows = append(rows, topRow)
-	}
+	// Первая строка: кнопки для перехода к предыдущей и следующей неделе
+	navRow := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("◀️ Пред. неделя", fmt.Sprintf("week_prev_%s", prevWeek.Format("2006-01-02"))),
+		tgbotapi.NewInlineKeyboardButtonData("След. неделя ▶️", fmt.Sprintf("week_next_%s", nextWeek.Format("2006-01-02"))),
+	)
 
-	// 2) Вторая строка: кнопки с номерами страниц
-	var pagesRow []tgbotapi.InlineKeyboardButton
-	start := currentPage - 3
-	if start < 1 {
-		start = 1
-	}
-	end := start + maxButtons - 1
-	if end > totalPages {
-		end = totalPages
+	// Вторая строка: кнопки с названиями дней недели
+	var dayRow []tgbotapi.InlineKeyboardButton
+	dayNames := []string{"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"}
+	for i := 0; i < 7; i++ {
+		day := weekStart.AddDate(0, 0, i)
+		dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(dayNames[i], fmt.Sprintf("day_%s", day.Format("2006-01-02"))))
 	}
 
-	for p := start; p <= end; p++ {
-		if p == currentPage {
-			pagesRow = append(pagesRow, tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("[%d]", p), "ignore"))
-		} else {
-			pagesRow = append(pagesRow, tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("%d", p), fmt.Sprintf("%s_page_%d", callbackPrefix, p)))
-		}
-	}
-	if len(pagesRow) > 0 {
-		rows = append(rows, pagesRow)
-	}
-
-	// 3) Третья строка: "Вперёд" / "В конец"
-	var bottomRow []tgbotapi.InlineKeyboardButton
-	if currentPage < totalPages {
-		bottomRow = append(bottomRow, tgbotapi.NewInlineKeyboardButtonData("➡️", fmt.Sprintf("%s_page_%d", callbackPrefix, currentPage+1)))
-		bottomRow = append(bottomRow, tgbotapi.NewInlineKeyboardButtonData(">>", fmt.Sprintf("%s_page_%d", callbackPrefix, totalPages)))
-	}
-	if len(bottomRow) > 0 {
-		rows = append(rows, bottomRow)
-	}
-
-	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(navRow, dayRow)
+	return keyboard
 }
 
 func GetScheduleByGroupCachedPaginated(group string, limit, offset int) ([]models.Schedule, int, error) {
