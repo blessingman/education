@@ -43,8 +43,9 @@ func FindUnregisteredUser(faculty, group, pass string) (*models.User, error) {
 		SELECT id, telegram_id, role, name, group_name, password, registration_code
 		FROM users
 		WHERE group_name = ?
-		  AND registration_code = ?
-		  AND telegram_id = 0
+		AND registration_code = ?
+		AND telegram_id = 0
+		AND (password IS NULL OR password = '')
 	`, group, pass)
 
 	var u models.User
@@ -57,6 +58,25 @@ func FindUnregisteredUser(faculty, group, pass string) (*models.User, error) {
 	}
 	// Проверить faculty? — если хотите сверять faculty=group_name? Или хранить faculty отдельно?
 	// Это зависит от структуры
+	return &u, nil
+}
+func FindUnregisteredTeacher(pass string) (*models.User, error) {
+	row := db.DB.QueryRow(`
+        SELECT id, telegram_id, role, name, faculty, group_name, password, registration_code
+        FROM users
+        WHERE registration_code = ?
+          AND role = 'teacher'
+          AND (password IS NULL OR password = '')
+    `, pass)
+
+	var u models.User
+	err := row.Scan(&u.ID, &u.TelegramID, &u.Role, &u.Name, &u.Faculty, &u.Group, &u.Password, &u.RegistrationCode)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	return &u, nil
 }
 
@@ -119,5 +139,3 @@ func GetUserByID(id int64) (*models.User, error) {
 	}
 	return &u, nil
 }
-
-// FindUnregisteredUser ищет запись (telegram_id=0) для faculty/group/pass

@@ -220,7 +220,7 @@ func AddScheduleForTeacher(teacherRegCode string, courseID int64, groupName stri
 	// Проверка: существует ли у преподавателя назначение для данного курса и группы.
 	queryCheck := `
 	    SELECT COUNT(*) FROM teacher_course_groups
-	    WHERE teacher_reg_code = ? AND course_id = ? AND group_name = ?
+	    WHERE teacher_reg_code = ? AND course_id = ? AND group_name = ?АStateTeacherWaitingForPassword
 	`
 	var count int
 	err := db.DB.QueryRow(queryCheck, teacherRegCode, courseID, groupName).Scan(&count)
