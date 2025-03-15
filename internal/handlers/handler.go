@@ -294,7 +294,7 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		totalPages := (totalRecords + limit - 1) / limit
 
 		// Форматируем новый текст сообщения с расписанием
-		newText := FormatPaginatedSchedules(schedules, newPage, totalPages, user.Role, user)
+		newText := FormatSchedulesGroupedByDay(schedules, newPage, totalPages, user.Role, user)
 		// Формируем новую клавиатуру с пагинацией (используя функцию с прямой навигацией по номерам страниц)
 		newKeyboard := BuildPaginationKeyboardWithNumbers(newPage, totalPages, "schedule")
 

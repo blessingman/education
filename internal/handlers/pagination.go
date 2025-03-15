@@ -4,7 +4,6 @@ import (
 	"education/internal/db"
 	"education/internal/models"
 	"fmt"
-	"log"
 	"sort"
 	"time"
 
@@ -306,60 +305,79 @@ func FormatSchedulesGroupedByDay(schedules []models.Schedule, currentPage, total
 		return "Расписание не найдено."
 	}
 
-	// Включаем, например, Markdown
-	// msgText := fmt.Sprintf("*Расписание (страница %d из %d)*\n\n", currentPage, totalPages)
-	// Если используем HTML:
+	// Заголовок с информацией о странице
 	msgText := fmt.Sprintf("<b>Расписание (страница %d из %d)</b>\n\n", currentPage, totalPages)
 
-	// Группируем по дате (без учёта времени)
-	type dayKey string // YYYY-MM-DD
+	// Группируем записи по дате (без времени)
+	type dayKey string // формат: YYYY-MM-DD
 	grouped := make(map[dayKey][]models.Schedule)
-
 	for _, s := range schedules {
-		dateOnly := s.ScheduleTime.Format("2006-01-02") // Преобразуем в строку "год-месяц-день"
+		dateOnly := s.ScheduleTime.Format("2006-01-02")
 		grouped[dayKey(dateOnly)] = append(grouped[dayKey(dateOnly)], s)
 	}
 
-	// Сортируем ключи (даты) в возрастающем порядке
-	var sortedKeys []string
+	// Сортировка дат по возрастанию
+	var sortedDates []string
 	for k := range grouped {
-		sortedKeys = append(sortedKeys, string(k))
+		sortedDates = append(sortedDates, string(k))
 	}
-	sort.Strings(sortedKeys) // сортировка дат по возрастанию
+	sort.Strings(sortedDates)
 
-	// Получим карты/справочники для курсов и имён преподавателей (если нужно)
-	courseMap, teacherMap, err := getCourseAndTeacherMaps()
-	if err != nil { // обработка ошибки, например:
-		log.Println("Ошибка при получении курсов и преподавателей:", err)
-		return ""
-
+	// Получаем справочники по курсам и преподавателям (используем уже имеющийся код)
+	courseMap := make(map[int64]string)
+	teacherMap := make(map[string]string)
+	{
+		rowsCourses, err := db.DB.Query("SELECT id, name FROM courses")
+		if err == nil {
+			defer rowsCourses.Close()
+			for rowsCourses.Next() {
+				var id int64
+				var name string
+				_ = rowsCourses.Scan(&id, &name)
+				courseMap[id] = name
+			}
+		}
+		rowsTeachers, err := db.DB.Query("SELECT registration_code, name FROM users WHERE role = 'teacher'")
+		if err == nil {
+			defer rowsTeachers.Close()
+			for rowsTeachers.Next() {
+				var regCode, name string
+				_ = rowsTeachers.Scan(&regCode, &name)
+				teacherMap[regCode] = name
+			}
+		}
 	}
-	for _, dateStr := range sortedKeys {
-		// Преобразуем строку в time.Time, чтобы вывести день недели
-		t, _ := time.Parse("2006-01-02", dateStr)
-		dayWeek := weekdayName(t.Weekday()) // функция из вашего кода
 
-		// Заголовок дня. Пример с HTML (можно и Markdown):
-		msgText += fmt.Sprintf("<b>%s (%s)</b>\n", t.Format("02.01.2006"), dayWeek)
+	// Формируем текст для каждого дня
+	for _, dateStr := range sortedDates {
+		// Преобразуем дату в формат time.Time для определения дня недели
+		t, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			continue
+		}
+		// Заголовок дня с эмодзи календаря и днем недели
+		dayHeader := fmt.Sprintf("📅 <b>%s (%s)</b>\n", t.Format("02.01.2006"), weekdayName(t.Weekday()))
+		msgText += dayHeader
 
-		// Перебираем записи за этот день
+		// Для каждого занятия за этот день – форматирование с отступами и эмодзи времени
 		for _, s := range grouped[dayKey(dateStr)] {
-			timePart := s.ScheduleTime.Format("15:04")
+			timeStr := s.ScheduleTime.Format("15:04")
 			courseName := courseMap[s.CourseID]
 			teacherName := teacherMap[s.TeacherRegCode]
 
 			if mode == "teacher" {
-				// Для преподавателя — группа и курс
-				msgText += fmt.Sprintf("• <i>%s</i> [%s]: %s (группа: %s)\n",
-					timePart, courseName, s.Description, s.GroupName)
+				// Для преподавателя – отображаем группу
+				msgText += fmt.Sprintf("   • <i>%s</i> [%s]: %s (<b>группа:</b> %s)\n", timeStr, courseName, s.Description, s.GroupName)
 			} else {
-				// Для студента — преподаватель и курс
-				msgText += fmt.Sprintf("• <i>%s</i> [%s]: %s (Преп.: %s)\n",
-					timePart, courseName, s.Description, teacherName)
+				// Для студента – отображаем имя преподавателя
+				msgText += fmt.Sprintf("   • <i>%s</i> [%s]: %s (<b>Преп.:</b> %s)\n", timeStr, courseName, s.Description, teacherName)
 			}
 		}
-		msgText += "\n" // отступ между днями
+		msgText += "\n" // дополнительный отступ между днями
 	}
+
+	// Можно добавить подвал с информацией или шуткой
+	msgText += "<i>Надеемся, расписание вам поможет организовать учебный процесс!</i>"
 
 	return msgText
 }
