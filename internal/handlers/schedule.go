@@ -147,33 +147,35 @@ func FormatSchedulesByWeek(schedules []models.Schedule, mode string, user *model
 
 // ShowSchedule отправляет расписание пользователю в Telegram.
 func ShowSchedule(chatID int64, bot *tgbotapi.BotAPI, user *models.User) error {
+	limit := 5
 	var schedules []models.Schedule
+	var totalRecords int
 	var err error
-	var mode string
 
 	if user.Role == "teacher" {
-		mode = "teacher"
-		schedules, err = GetSchedulesByTeacher(user.RegistrationCode)
-	} else if user.Role == "student" {
-		mode = "student"
-		schedules, err = GetSchedulesByGroup(user.Group)
+		schedules, err = GetScheduleByTeacherPaginated(user.RegistrationCode, limit, 0)
+		if err != nil {
+			return err
+		}
+		totalRecords, err = CountSchedulesByTeacher(user.RegistrationCode)
 	} else {
-		msg := tgbotapi.NewMessage(chatID, "⚠️ Роль пользователя не определена.")
-		return sendAndTrackMessage(bot, msg)
+		schedules, err = GetScheduleByGroupPaginated(user.Group, limit, 0)
+		if err != nil {
+			return err
+		}
+		totalRecords, err = CountSchedulesByGroup(user.Group)
 	}
-
 	if err != nil {
-		msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка при получении расписания.")
-		return sendAndTrackMessage(bot, msg)
+		return err
 	}
 
-	msgText, err := FormatSchedulesByWeek(schedules, mode, user)
-	if err != nil {
-		msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка при форматировании расписания.")
-		return sendAndTrackMessage(bot, msg)
-	}
+	totalPages := (totalRecords + limit - 1) / limit
+	text := FormatPaginatedSchedules(schedules, 1, totalPages, user.Role, user)
+	keyboard := BuildPaginationKeyboard(1, totalPages, "schedule")
 
-	msg := tgbotapi.NewMessage(chatID, msgText)
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyMarkup = keyboard
+
 	return sendAndTrackMessage(bot, msg)
 }
 

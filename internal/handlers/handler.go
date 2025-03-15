@@ -4,6 +4,7 @@ import (
 	"education/internal/auth"
 	"education/internal/models"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -243,7 +244,72 @@ func ProcessMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI) {
 // ProcessCallback — обрабатывает нажатия инлайн-кнопок (меню регистрации, входа, расписания и т.д.).
 func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	chatID := callback.Message.Chat.ID
+	data := callback.Data
 
+	// Обработка пагинации расписания
+	if strings.HasPrefix(data, "schedule_page_") {
+		// Извлекаем номер страницы из callback data
+		pageStr := strings.TrimPrefix(data, "schedule_page_")
+		newPage, err := strconv.Atoi(pageStr)
+		if err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обработки страницы"))
+			return
+		}
+
+		// Задаём количество записей на страницу
+		limit := 5
+		offset := (newPage - 1) * limit
+
+		// Получаем данные пользователя
+		user, err := auth.GetUserByTelegramID(chatID)
+		if err != nil || user == nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения данных пользователя"))
+			return
+		}
+
+		// Выбираем расписание в зависимости от роли пользователя
+		var schedules []models.Schedule
+		var totalRecords int
+		if user.Role == "teacher" {
+			schedules, err = GetScheduleByTeacherPaginated(user.RegistrationCode, limit, offset)
+			if err != nil {
+				bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения расписания"))
+				return
+			}
+			totalRecords, err = CountSchedulesByTeacher(user.RegistrationCode)
+		} else {
+			schedules, err = GetScheduleByGroupPaginated(user.Group, limit, offset)
+			if err != nil {
+				bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения расписания"))
+				return
+			}
+			totalRecords, err = CountSchedulesByGroup(user.Group)
+		}
+		if err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка подсчёта записей"))
+			return
+		}
+
+		// Вычисляем общее количество страниц
+		totalPages := (totalRecords + limit - 1) / limit
+
+		// Формируем текст нового сообщения с расписанием
+		text := FormatPaginatedSchedules(schedules, newPage, totalPages, user.Role, user)
+		// Создаём клавиатуру навигации по страницам
+		keyboard := BuildPaginationKeyboard(newPage, totalPages, "schedule")
+
+		// Редактируем текущее сообщение (сохраняем chatID и MessageID из callback)
+		editMsg := tgbotapi.NewEditMessageText(chatID, callback.Message.MessageID, text)
+		editMsg.ReplyMarkup = &keyboard
+		if _, err := bot.Send(editMsg); err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обновления расписания"))
+			return
+		}
+
+		// Отправляем callback-ответ, чтобы убрать индикатор загрузки
+		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
+		return
+	}
 	// Если пользователь уже в процессе регистрации/логина, не даём начать другой процесс
 	if userStates[chatID] != "" || loginStates[chatID] != "" {
 		switch callback.Data {
