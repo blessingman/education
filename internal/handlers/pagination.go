@@ -122,3 +122,82 @@ func BuildPaginationKeyboard(currentPage, totalPages int, callbackPrefix string)
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(buttons)
 	return keyboard
 }
+
+func GetScheduleByGroupCachedPaginated(group string, limit, offset int) ([]models.Schedule, int, error) {
+	// Ключ для кеша – например, группа
+	key := group
+
+	// Попытка получить данные из кеша
+	cacheEntry, found := GetCachedSchedule(key)
+	if found {
+		totalRecords := len(cacheEntry.Schedules)
+		// Извлекаем нужную порцию (пагинация)
+		end := offset + limit
+		if end > totalRecords {
+			end = totalRecords
+		}
+		if offset > totalRecords {
+			return []models.Schedule{}, totalRecords, nil
+		}
+		return cacheEntry.Schedules[offset:end], totalRecords, nil
+	}
+
+	// Если данных в кеше нет, выполняем запрос к базе
+	schedules, err := GetScheduleByGroup(group)
+	if err != nil {
+		return nil, 0, err
+	}
+	// Сохраняем данные в кеш
+	SetCachedSchedule(key, schedules)
+	totalRecords := len(schedules)
+	// Применяем пагинацию
+	end := offset + limit
+	if end > totalRecords {
+		end = totalRecords
+	}
+	if offset > totalRecords {
+		return []models.Schedule{}, totalRecords, nil
+	}
+	return schedules[offset:end], totalRecords, nil
+}
+
+// GetScheduleByTeacherCachedPaginated возвращает расписание для преподавателя с кешированием.
+// teacherRegCode – регистрационный код преподавателя, limit – количество записей на страницу, offset – смещение.
+func GetScheduleByTeacherCachedPaginated(teacherRegCode string, limit, offset int) ([]models.Schedule, int, error) {
+	// Используем регистрационный код в качестве ключа для кеша.
+	key := teacherRegCode
+
+	// Пытаемся получить данные из кеша.
+	cacheEntry, found := GetCachedSchedule(key)
+	if found {
+		totalRecords := len(cacheEntry.Schedules)
+		// Применяем пагинацию.
+		end := offset + limit
+		if end > totalRecords {
+			end = totalRecords
+		}
+		if offset > totalRecords {
+			return []models.Schedule{}, totalRecords, nil
+		}
+		return cacheEntry.Schedules[offset:end], totalRecords, nil
+	}
+
+	// Если данных в кеше нет, выполняем запрос к базе.
+	schedules, err := GetScheduleByTeacher(teacherRegCode)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Сохраняем полученные данные в кеш.
+	SetCachedSchedule(key, schedules)
+	totalRecords := len(schedules)
+	// Применяем пагинацию.
+	end := offset + limit
+	if end > totalRecords {
+		end = totalRecords
+	}
+	if offset > totalRecords {
+		return []models.Schedule{}, totalRecords, nil
+	}
+	return schedules[offset:end], totalRecords, nil
+}

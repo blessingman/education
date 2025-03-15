@@ -99,6 +99,37 @@ func GetScheduleByGroup(group string) ([]models.Schedule, error) {
 	return schedules, rows.Err()
 }
 
+// GetScheduleByTeacher выполняет выборку всех записей расписания для преподавателя по его регистрационному коду.
+func GetScheduleByTeacher(teacherRegCode string) ([]models.Schedule, error) {
+	query := `
+		SELECT id, course_id, group_name, teacher_reg_code, schedule_time, description
+		FROM schedules
+		WHERE teacher_reg_code = ?
+		ORDER BY schedule_time
+	`
+	rows, err := db.DB.Query(query, teacherRegCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var schedules []models.Schedule
+	for rows.Next() {
+		var s models.Schedule
+		var scheduleTimeStr string
+		if err := rows.Scan(&s.ID, &s.CourseID, &s.GroupName, &s.TeacherRegCode, &scheduleTimeStr, &s.Description); err != nil {
+			return nil, err
+		}
+		// Преобразуем строку времени в тип time.Time
+		s.ScheduleTime, err = time.Parse(time.RFC3339, scheduleTimeStr)
+		if err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, s)
+	}
+	return schedules, rows.Err()
+}
+
 /*
 // GetMaterialsByGroup возвращает список материалов для указанной группы.
 func GetMaterialsByGroup(group string) ([]models.Material, error) {

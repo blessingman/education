@@ -145,7 +145,7 @@ func FormatSchedulesByWeek(schedules []models.Schedule, mode string, user *model
 	return msgText, nil
 }
 
-// ShowSchedule отправляет расписание пользователю в Telegram.
+// ShowSchedule отправляет расписание пользователю в Telegram с использованием кеша.
 func ShowSchedule(chatID int64, bot *tgbotapi.BotAPI, user *models.User) error {
 	limit := 5
 	var schedules []models.Schedule
@@ -153,20 +153,17 @@ func ShowSchedule(chatID int64, bot *tgbotapi.BotAPI, user *models.User) error {
 	var err error
 
 	if user.Role == "teacher" {
-		schedules, err = GetScheduleByTeacherPaginated(user.RegistrationCode, limit, 0)
+		// Используем кешированное получение расписания для преподавателя
+		schedules, totalRecords, err = GetScheduleByTeacherCachedPaginated(user.RegistrationCode, limit, 0)
 		if err != nil {
 			return err
 		}
-		totalRecords, err = CountSchedulesByTeacher(user.RegistrationCode)
 	} else {
-		schedules, err = GetScheduleByGroupPaginated(user.Group, limit, 0)
+		// Используем кешированное получение расписания для студента (по группе)
+		schedules, totalRecords, err = GetScheduleByGroupCachedPaginated(user.Group, limit, 0)
 		if err != nil {
 			return err
 		}
-		totalRecords, err = CountSchedulesByGroup(user.Group)
-	}
-	if err != nil {
-		return err
 	}
 
 	totalPages := (totalRecords + limit - 1) / limit

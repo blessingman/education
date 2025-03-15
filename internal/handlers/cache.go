@@ -83,3 +83,9 @@ func SetCachedSchedule(key string, schedules []models.Schedule) {
 		UpdatedAt: time.Now(),
 	}
 }
+
+func InvalidateScheduleCache(key string) {
+	ScheduleCache.Lock()
+	defer ScheduleCache.Unlock()
+	delete(ScheduleCache.entries, key)
+}
