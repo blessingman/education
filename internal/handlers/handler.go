@@ -245,66 +245,98 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	chatID := callback.Message.Chat.ID
 	data := callback.Data
 
+	// Получим пользователя (если нужен во многих ветках)
+	user, err := auth.GetUserByTelegramID(chatID)
+	if err != nil {
+		// Если мы не можем получить пользователя, то часть функций будет недоступна
+		// но можем вывести callback
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения данных пользователя"))
+		return
+	}
+
 	// Обработка пагинации расписания
 	// Обработка навигации по неделям
+	// Обработка навигации по неделям
+	// --- 1) Навигация по неделям ---
 	if strings.HasPrefix(data, "week_prev_") {
-		// Извлекаем дату начала текущей недели из callback data
 		currentWeekStr := strings.TrimPrefix(data, "week_prev_")
 		currentWeekStart, err := time.Parse("2006-01-02", currentWeekStr)
 		if err != nil {
 			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обработки даты"))
 			return
 		}
-		// Переходим на предыдущую неделю
 		newWeekStart := currentWeekStart.AddDate(0, 0, -7)
-		user, err := auth.GetUserByTelegramID(chatID)
-		if err != nil || user == nil {
-			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения данных пользователя"))
-			return
-		}
-		ShowScheduleWeek(chatID, bot, user, newWeekStart)
 		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
+		ShowScheduleWeek(chatID, bot, user, newWeekStart)
 		return
 	}
 
 	if strings.HasPrefix(data, "week_next_") {
-		// Извлекаем дату начала текущей недели
 		currentWeekStr := strings.TrimPrefix(data, "week_next_")
 		currentWeekStart, err := time.Parse("2006-01-02", currentWeekStr)
 		if err != nil {
 			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обработки даты"))
 			return
 		}
-		// Переходим на следующую неделю
 		newWeekStart := currentWeekStart.AddDate(0, 0, 7)
-		user, err := auth.GetUserByTelegramID(chatID)
-		if err != nil || user == nil {
-			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения данных пользователя"))
-			return
-		}
-		ShowScheduleWeek(chatID, bot, user, newWeekStart)
 		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
+		ShowScheduleWeek(chatID, bot, user, newWeekStart)
 		return
 	}
 
-	// Обработка навигации по конкретному дню
+	if data == "week_today" {
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Переход к текущей неделе"))
+		now := time.Now()
+		offset := int(now.Weekday())
+		if offset == 0 {
+			offset = 7
+		}
+		weekStart := now.AddDate(0, 0, -(offset - 1))
+		ShowScheduleWeek(chatID, bot, user, weekStart)
+		return
+	}
+
+	// --- 2) Навигация по конкретному дню ---
 	if strings.HasPrefix(data, "day_") {
-		// Извлекаем выбранную дату
 		dayStr := strings.TrimPrefix(data, "day_")
 		selectedDay, err := time.Parse("2006-01-02", dayStr)
 		if err != nil {
 			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обработки даты"))
 			return
 		}
-		user, err := auth.GetUserByTelegramID(chatID)
-		if err != nil || user == nil {
-			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения данных пользователя"))
-			return
-		}
-		ShowScheduleDay(chatID, bot, user, selectedDay)
 		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
+		ShowScheduleDay(chatID, bot, user, selectedDay)
 		return
 	}
+
+	// --- 3) Фильтрация по курсу ---
+	// 3.1) Кнопка, открывающая меню выбора курса
+	if data == "filter_menu" {
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Выбор курса для фильтрации"))
+
+		// Получаем список всех курсов из БД
+		courses, err := GetAllCourses()
+		if err != nil || len(courses) == 0 {
+			msg := tgbotapi.NewMessage(chatID, "Курсы не найдены.")
+			bot.Send(msg)
+			return
+		}
+
+		// Генерируем кнопки для каждого курса
+		var rows [][]tgbotapi.InlineKeyboardButton
+		for _, c := range courses {
+			courseName := c.Name
+			btn := tgbotapi.NewInlineKeyboardButtonData(courseName, "filter_course_"+courseName)
+			rows = append(rows, tgbotapi.NewInlineKeyboardRow(btn))
+		}
+
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
+		msg := tgbotapi.NewMessage(chatID, "Выберите курс для фильтра:")
+		msg.ReplyMarkup = keyboard
+		bot.Send(msg)
+		return
+	}
+
 	// Если пользователь уже в процессе регистрации/логина, не даём начать другой процесс
 	if userStates[chatID] != "" || loginStates[chatID] != "" {
 		switch callback.Data {

@@ -130,6 +130,24 @@ func GetScheduleByTeacher(teacherRegCode string) ([]models.Schedule, error) {
 	return schedules, rows.Err()
 }
 
+func GetAllCourses() ([]models.Course, error) {
+	rows, err := db.DB.Query("SELECT id, name FROM courses")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var courses []models.Course
+	for rows.Next() {
+		var course models.Course
+		if err := rows.Scan(&course.ID, &course.Name); err != nil {
+			return nil, err
+		}
+		courses = append(courses, course)
+	}
+	return courses, rows.Err()
+}
+
 /*
 // GetMaterialsByGroup возвращает список материалов для указанной группы.
 func GetMaterialsByGroup(group string) ([]models.Material, error) {

@@ -289,6 +289,7 @@ func seedTeacherCourseGroups() {
 
 // Генерация расписания
 // Генерация расписания
+// Обновлённая функция генерации расписания с дополнительными полями
 func seedSchedules() {
 	var count int
 	err := DB.QueryRow(`SELECT COUNT(*) FROM schedules`).Scan(&count)
@@ -332,8 +333,14 @@ func seedSchedules() {
 			}{tcg.teacherRegCode, tcg.courseID})
 		}
 
-		// Доступные временные слоты в день
-		timeSlots := []int{9, 11, 13, 15} // 9:00, 11:00, 13:00, 15:00
+		// Доступные временные слоты в день (например, 9:00, 11:00, 13:00, 15:00)
+		timeSlots := []int{9, 11, 13, 15}
+
+		// Дополнительные данные для расписания
+		auditoryOptions := []string{"101", "102", "103", "104", "201", "202"}
+		lessonTypes := []string{"Лекция", "Практика", "Лабораторная", "Семинар"}
+		// Варианты длительностей занятий (в минутах)
+		lessonDurations := []int{60, 90, 120}
 
 		// Генерация расписания на 3 недели, 4 рабочих дня в неделю, 3–4 занятия в день
 		startDate := time.Date(2025, 3, 17, 0, 0, 0, 0, time.UTC) // Начало с понедельника
@@ -378,10 +385,23 @@ func seedSchedules() {
 						// Время начала занятия
 						scheduleTime := startDate.AddDate(0, 0, week*7+day).Add(time.Duration(slot) * time.Hour)
 						description := fmt.Sprintf("Занятие по курсу для группы %s", groupName)
+						auditory := auditoryOptions[rand.Intn(len(auditoryOptions))]
+						lessonType := lessonTypes[rand.Intn(len(lessonTypes))]
+						duration := lessonDurations[rand.Intn(len(lessonDurations))] // Выбираем случайную длительность
+
 						_, err := DB.Exec(`
-                            INSERT INTO schedules (course_id, group_name, teacher_reg_code, schedule_time, description)
-                            VALUES (?, ?, ?, ?, ?)
-                        `, shuffledTcgs[i].courseID, groupName, shuffledTcgs[i].teacherRegCode, scheduleTime, description)
+                            INSERT INTO schedules (course_id, group_name, teacher_reg_code, schedule_time, description, auditory, lesson_type, duration)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        `,
+							shuffledTcgs[i].courseID,
+							groupName,
+							shuffledTcgs[i].teacherRegCode,
+							scheduleTime.Format(time.RFC3339),
+							description,
+							auditory,
+							lessonType,
+							duration,
+						)
 						if err != nil {
 							log.Panicf("Ошибка вставки расписания: %v", err)
 						}

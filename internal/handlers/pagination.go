@@ -10,6 +10,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+/*
 func getCourseAndTeacherMaps() (map[int64]string, map[string]string, error) {
 	courseMap := make(map[int64]string)   // course_id -> course_name
 	teacherMap := make(map[string]string) // registration_code -> teacher_name
@@ -47,6 +48,7 @@ func getCourseAndTeacherMaps() (map[int64]string, map[string]string, error) {
 
 	return courseMap, teacherMap, nil
 }
+*/
 
 // CountSchedulesByGroup возвращает общее количество записей расписания для указанной группы.
 func CountSchedulesByGroup(group string) (int, error) {
@@ -62,94 +64,6 @@ func CountSchedulesByTeacher(teacherRegCode string) (int, error) {
 	var count int
 	err := db.DB.QueryRow(query, teacherRegCode).Scan(&count)
 	return count, err
-}
-
-// GetScheduleByGroupPaginated выполняет выборку расписания для группы с использованием LIMIT и OFFSET.
-func GetScheduleByGroupPaginated(group string, limit, offset int) ([]models.Schedule, error) {
-	query := `
-		SELECT id, course_id, group_name, teacher_reg_code, schedule_time, description
-		FROM schedules
-		WHERE group_name = ?
-		ORDER BY schedule_time
-		LIMIT ? OFFSET ?
-	`
-	rows, err := db.DB.Query(query, group, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var schedules []models.Schedule
-	for rows.Next() {
-		var s models.Schedule
-		var scheduleTimeStr string
-		if err := rows.Scan(&s.ID, &s.CourseID, &s.GroupName, &s.TeacherRegCode, &scheduleTimeStr, &s.Description); err != nil {
-			return nil, err
-		}
-		s.ScheduleTime, _ = time.Parse(time.RFC3339, scheduleTimeStr)
-		schedules = append(schedules, s)
-	}
-	return schedules, rows.Err()
-}
-
-// GetScheduleByTeacherPaginated выполняет выборку расписания для преподавателя с использованием LIMIT и OFFSET.
-func GetScheduleByTeacherPaginated(teacherRegCode string, limit, offset int) ([]models.Schedule, error) {
-	query := `
-		SELECT id, course_id, group_name, teacher_reg_code, schedule_time, description
-		FROM schedules
-		WHERE teacher_reg_code = ?
-		ORDER BY schedule_time
-		LIMIT ? OFFSET ?
-	`
-	rows, err := db.DB.Query(query, teacherRegCode, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var schedules []models.Schedule
-	for rows.Next() {
-		var s models.Schedule
-		var scheduleTimeStr string
-		if err := rows.Scan(&s.ID, &s.CourseID, &s.GroupName, &s.TeacherRegCode, &scheduleTimeStr, &s.Description); err != nil {
-			return nil, err
-		}
-		s.ScheduleTime, _ = time.Parse(time.RFC3339, scheduleTimeStr)
-		schedules = append(schedules, s)
-	}
-	return schedules, rows.Err()
-}
-
-// BuildPaginationKeyboard создаёт inline‑клавиатуру для навигации по страницам.
-// callbackPrefix используется для формирования callback data (например, "schedule" для расписания).
-func BuildPaginationKeyboard(currentPage, totalPages int, callbackPrefix string) tgbotapi.InlineKeyboardMarkup {
-	var row []tgbotapi.InlineKeyboardButton
-
-	// Кнопка "В начало"
-	if currentPage > 1 {
-		row = append(row, tgbotapi.NewInlineKeyboardButtonData("<<", fmt.Sprintf("%s_page_%d", callbackPrefix, 1)))
-	}
-	// Кнопка "Назад"
-	if currentPage > 1 {
-		row = append(row, tgbotapi.NewInlineKeyboardButtonData("⬅️", fmt.Sprintf("%s_page_%d", callbackPrefix, currentPage-1)))
-	}
-
-	// Текущая страница
-	row = append(row, tgbotapi.NewInlineKeyboardButtonData(
-		fmt.Sprintf("Стр. %d/%d", currentPage, totalPages),
-		"ignore"))
-
-	// Кнопка "Вперёд"
-	if currentPage < totalPages {
-		row = append(row, tgbotapi.NewInlineKeyboardButtonData("➡️", fmt.Sprintf("%s_page_%d", callbackPrefix, currentPage+1)))
-	}
-	// Кнопка "В конец"
-	if currentPage < totalPages {
-		row = append(row, tgbotapi.NewInlineKeyboardButtonData(">>", fmt.Sprintf("%s_page_%d", callbackPrefix, totalPages)))
-	}
-
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(row)
-	return keyboard
 }
 
 func BuildWeekNavigationKeyboard(weekStart time.Time) tgbotapi.InlineKeyboardMarkup {
@@ -259,10 +173,12 @@ func FormatSchedulesGroupedByDay(schedules []models.Schedule, currentPage, total
 		return "Расписание не найдено."
 	}
 
-	// Заголовок с информацией о странице
-	msgText := fmt.Sprintf("<b>Расписание (страница %d из %d)</b>\n\n", currentPage, totalPages)
+	// Если показываем полный день, информацию о страницах можно убрать
+	// msgText := fmt.Sprintf("<b>Расписание (страница %d из %d)</b>\n\n", currentPage, totalPages)
+	// Для дневного отображения можно использовать заголовок без пагинации:
+	msgText := "<b>Расписание на выбранный день</b>\n\n"
 
-	// Группируем записи по дате (без времени)
+	// Группируем записи по дате (без учета времени)
 	type dayKey string // формат: YYYY-MM-DD
 	grouped := make(map[dayKey][]models.Schedule)
 	for _, s := range schedules {
@@ -270,14 +186,14 @@ func FormatSchedulesGroupedByDay(schedules []models.Schedule, currentPage, total
 		grouped[dayKey(dateOnly)] = append(grouped[dayKey(dateOnly)], s)
 	}
 
-	// Сортировка дат по возрастанию
+	// Сортируем даты по возрастанию
 	var sortedDates []string
 	for k := range grouped {
 		sortedDates = append(sortedDates, string(k))
 	}
 	sort.Strings(sortedDates)
 
-	// Получаем справочники по курсам и преподавателям (используем уже имеющийся код)
+	// Получаем справочники по курсам и преподавателям
 	courseMap := make(map[int64]string)
 	teacherMap := make(map[string]string)
 	{
@@ -304,16 +220,15 @@ func FormatSchedulesGroupedByDay(schedules []models.Schedule, currentPage, total
 
 	// Формируем текст для каждого дня
 	for _, dateStr := range sortedDates {
-		// Преобразуем дату в формат time.Time для определения дня недели
 		t, err := time.Parse("2006-01-02", dateStr)
 		if err != nil {
 			continue
 		}
-		// Заголовок дня с эмодзи календаря и днем недели
+		// Заголовок дня с эмодзи календаря и названием дня недели
 		dayHeader := fmt.Sprintf("📅 <b>%s (%s)</b>\n", t.Format("02.01.2006"), weekdayName(t.Weekday()))
 		msgText += dayHeader
 
-		// Для каждого занятия за этот день – форматирование с отступами и эмодзи времени
+		// Для каждого занятия за этот день выводим информацию
 		for _, s := range grouped[dayKey(dateStr)] {
 			timeStr := s.ScheduleTime.Format("15:04")
 			courseName := courseMap[s.CourseID]
@@ -321,17 +236,18 @@ func FormatSchedulesGroupedByDay(schedules []models.Schedule, currentPage, total
 
 			if mode == "teacher" {
 				// Для преподавателя – отображаем группу
-				msgText += fmt.Sprintf("   • <i>%s</i> [%s]: %s (<b>группа:</b> %s)\n", timeStr, courseName, s.Description, s.GroupName)
+				msgText += fmt.Sprintf("   • <b>%s</b> — %s\n     <i>Группа:</i> %s, <i>Аудитория:</i> %s, <i>Тип:</i> %s, <i>Длительность:</i> %d мин.\n",
+					timeStr, courseName, s.GroupName, s.Auditory, s.LessonType, s.Duration)
 			} else {
 				// Для студента – отображаем имя преподавателя
-				msgText += fmt.Sprintf("   • <i>%s</i> [%s]: %s (<b>Преп.:</b> %s)\n", timeStr, courseName, s.Description, teacherName)
+				msgText += fmt.Sprintf("   • <b>%s</b> — %s\n     <i>Преп.:</i> %s, <i>Аудитория:</i> %s, <i>Тип:</i> %s, <i>Длительность:</i> %d мин.\n",
+					timeStr, courseName, teacherName, s.Auditory, s.LessonType, s.Duration)
 			}
 		}
-		msgText += "\n" // дополнительный отступ между днями
+		msgText += "\n" // отступ между днями
 	}
 
-	// Можно добавить подвал с информацией или шуткой
-	msgText += "<i>Надеемся, расписание вам поможет организовать учебный процесс!</i>"
-
+	// Подвал сообщения
+	msgText += "<i>Надеемся, расписание поможет вам организовать учебный процесс!</i>"
 	return msgText
 }

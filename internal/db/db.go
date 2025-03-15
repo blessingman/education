@@ -85,16 +85,20 @@ func createTables() {
 	}
 
 	// 5) Таблица для расписания
+	// 5) Таблица для расписания
 	_, err = DB.ExecContext(ctx, `
-	    CREATE TABLE IF NOT EXISTS schedules (
-	        id INTEGER PRIMARY KEY AUTOINCREMENT,
-	        course_id INTEGER NOT NULL,
-	        group_name TEXT NOT NULL,
-	        teacher_reg_code TEXT NOT NULL,
-	        schedule_time DATETIME NOT NULL,
-	        description TEXT,
-	        FOREIGN KEY(course_id) REFERENCES courses(id)
-	    );
+		CREATE TABLE IF NOT EXISTS schedules (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			course_id INTEGER NOT NULL,
+			group_name TEXT NOT NULL,
+			teacher_reg_code TEXT NOT NULL,
+			schedule_time DATETIME NOT NULL,
+			description TEXT,
+			auditory TEXT,
+			lesson_type TEXT,
+			duration INT,           -- <--- ВАЖНО: новая колонка
+			FOREIGN KEY(course_id) REFERENCES courses(id)
+		);
 	`)
 	if err != nil {
 		log.Panicf("Ошибка создания таблицы schedules: %v", err)
