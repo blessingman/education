@@ -16,7 +16,6 @@ func FindVerifiedParticipantInDB(faculty, group, pass string) (*models.User, boo
         FROM users
         WHERE registration_code = ?
           AND group_name = ?
-          AND telegram_id = 0
     `, pass, group)
 
 	var u models.User
@@ -100,6 +99,7 @@ func GetScheduleByGroup(group string) ([]models.Schedule, error) {
 	return schedules, rows.Err()
 }
 
+/*
 // GetMaterialsByGroup возвращает список материалов для указанной группы.
 func GetMaterialsByGroup(group string) ([]models.Material, error) {
 	rows, err := db.DB.Query(`
@@ -122,6 +122,7 @@ func GetMaterialsByGroup(group string) ([]models.Material, error) {
 	}
 	return materials, rows.Err()
 }
+
 
 // GetSchedulesByTeacher возвращает список расписания для преподавателя по его регистрационному коду.
 func GetSchedulesByTeacher(teacherRegCode string) ([]models.Schedule, error) {
@@ -152,3 +153,4 @@ func GetSchedulesByTeacher(teacherRegCode string) ([]models.Schedule, error) {
 	}
 	return schedules, nil
 }
+*/

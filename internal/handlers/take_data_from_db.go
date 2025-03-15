@@ -3,9 +3,6 @@ package handlers
 import (
 	"education/internal/db"
 	"education/internal/models"
-	"fmt"
-	"strings"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -191,6 +188,7 @@ func GetCoursesByTeacherRegCode(teacherRegCode string) ([]models.Course, error) 
 	return courses, nil
 }
 
+/*
 // AddSchedule добавляет новую запись в таблицу schedules.
 func AddSchedule(schedule models.Schedule) error {
 	// Приводим время к строке в формате RFC3339 (или используйте нужный вам формат)
@@ -432,3 +430,4 @@ func weekdayName(wd time.Weekday) string {
 		return ""
 	}
 }
+*/

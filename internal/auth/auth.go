@@ -44,7 +44,6 @@ func FindUnregisteredUser(faculty, group, pass string) (*models.User, error) {
 		FROM users
 		WHERE group_name = ?
 		AND registration_code = ?
-		AND telegram_id = 0
 		AND (password IS NULL OR password = '')
 	`, group, pass)
 

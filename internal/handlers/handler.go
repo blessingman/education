@@ -273,46 +273,17 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	case "menu_schedule":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "🗓 Расписание"))
 		user, _ := auth.GetUserByTelegramID(chatID)
-		var msgText string
-		var err error
-
-		if user.Role == "teacher" {
-			msgText, err = GetSchedulesFormattedByWeekGeneric("teacher", user.RegistrationCode)
-		} else if user.Role == "student" {
-			msgText, err = GetSchedulesFormattedByWeekGeneric("student", user.Group)
-		} else {
-			msgText = "Роль пользователя не определена."
+		if err := ShowSchedule(chatID, bot, user); err != nil {
+			fmt.Println("Ошибка при отправке расписания:", err)
 		}
-
-		if err != nil {
-			msgText = "Ошибка при получении расписания."
-		}
-
-		msg := tgbotapi.NewMessage(chatID, msgText)
-		sendAndTrackMessage(bot, msg)
 		return
 
 	case "menu_materials":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "📚 Материалы"))
 		user, _ := auth.GetUserByTelegramID(chatID)
-		materials, err := GetMaterialsByGroup(user.Group)
-		var msgText string
-		if err != nil || len(materials) == 0 {
-			msgText = "Материалы не найдены."
-		} else {
-			msgText = "Доступные материалы:\n"
-			for _, m := range materials {
-				msgText += "• " + m.Title + "\n"
-				if m.Description != "" {
-					msgText += "  " + m.Description + "\n"
-				}
-				if m.FileURL != "" {
-					msgText += "  Ссылка: " + m.FileURL + "\n"
-				}
-			}
+		if err := ShowMaterials(chatID, bot, user); err != nil {
+			fmt.Println("Ошибка при отправке материалов:", err)
 		}
-		msg := tgbotapi.NewMessage(chatID, msgText)
-		sendAndTrackMessage(bot, msg)
 		return
 
 	case "menu_logout":
@@ -407,6 +378,7 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		// Отправка сообщения
 		msg := tgbotapi.NewMessage(chatID, msgText)
 		sendAndTrackMessage(bot, msg)
+		return
 
 	}
 
