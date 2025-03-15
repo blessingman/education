@@ -293,20 +293,23 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		// Вычисляем общее количество страниц
 		totalPages := (totalRecords + limit - 1) / limit
 
-		// Формируем текст нового сообщения с расписанием
-		text := FormatPaginatedSchedules(schedules, newPage, totalPages, user.Role, user)
-		// Создаём клавиатуру навигации по страницам
-		keyboard := BuildPaginationKeyboard(newPage, totalPages, "schedule")
+		// Форматируем новый текст сообщения с расписанием
+		newText := FormatPaginatedSchedules(schedules, newPage, totalPages, user.Role, user)
+		// Формируем новую клавиатуру с пагинацией (используя функцию с прямой навигацией по номерам страниц)
+		newKeyboard := BuildPaginationKeyboardWithNumbers(newPage, totalPages, "schedule")
 
-		// Редактируем текущее сообщение (сохраняем chatID и MessageID из callback)
-		editMsg := tgbotapi.NewEditMessageText(chatID, callback.Message.MessageID, text)
-		editMsg.ReplyMarkup = &keyboard
+		// Создаем объект для редактирования сообщения
+		editMsg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, newText)
+		editMsg.ParseMode = "HTML" // или "Markdown", в зависимости от используемого синтаксиса
+		editMsg.ReplyMarkup = &newKeyboard
+
+		// Отправляем измененное сообщение
 		if _, err := bot.Send(editMsg); err != nil {
 			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обновления расписания"))
 			return
 		}
 
-		// Отправляем callback-ответ, чтобы убрать индикатор загрузки
+		// Отправляем callback ответ для скрытия индикатора загрузки
 		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
 		return
 	}

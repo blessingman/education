@@ -168,7 +168,7 @@ func ShowSchedule(chatID int64, bot *tgbotapi.BotAPI, user *models.User) error {
 
 	totalPages := (totalRecords + limit - 1) / limit
 	text := FormatPaginatedSchedules(schedules, 1, totalPages, user.Role, user)
-	keyboard := BuildPaginationKeyboard(1, totalPages, "schedule")
+	keyboard := BuildPaginationKeyboardWithNumbers(1, totalPages, "schedule")
 
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ReplyMarkup = keyboard
