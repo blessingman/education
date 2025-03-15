@@ -79,7 +79,7 @@ func BuildWeekNavigationKeyboard(weekStart time.Time) tgbotapi.InlineKeyboardMar
 
 	// Вторая строка: кнопки с названиями дней недели
 	var dayRow []tgbotapi.InlineKeyboardButton
-	dayNames := []string{"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"}
+	dayNames := []string{"П", "В", "С", "Ч", "П", "С", "В"}
 	for i := 0; i < 7; i++ {
 		day := weekStart.AddDate(0, 0, i)
 		dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(dayNames[i], fmt.Sprintf("day_%s", day.Format("2006-01-02"))))

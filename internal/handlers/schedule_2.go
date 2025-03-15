@@ -124,7 +124,7 @@ func BuildWeekNavigationKeyboardFiltered(weekStart time.Time, schedules []models
 	)
 
 	// Кнопки с названиями дней недели
-	dayNames := []string{"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"}
+	dayNames := []string{"П", "В", "С", "Ч", "П", "С", "В"}
 	var dayRow []tgbotapi.InlineKeyboardButton
 	for i := 0; i < 7; i++ {
 		day := weekStart.AddDate(0, 0, i)
