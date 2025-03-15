@@ -95,12 +95,14 @@ func processRegistrationMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, s
 			sendAndTrackMessage(bot, msg)
 			return
 		}
-		if userInDB.TelegramID != 0 {
-			msg := tgbotapi.NewMessage(chatID, "❌ Этот код уже зарегистрирован другим пользователем.")
-			sendAndTrackMessage(bot, msg)
-			return
-		}
 
+		/*
+			if userInDB.TelegramID != 0 {
+				msg := tgbotapi.NewMessage(chatID, "❌ Этот код уже зарегистрирован другим пользователем.")
+				sendAndTrackMessage(bot, msg)
+				return
+			}
+		*/
 		// ВАЖНО: Проверяем, совпадает ли faculty в БД с выбранным преподавателем
 		if userInDB.Faculty != "" && userInDB.Faculty != tempData.Faculty {
 			msg := tgbotapi.NewMessage(chatID,
