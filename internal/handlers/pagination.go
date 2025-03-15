@@ -71,21 +71,29 @@ func BuildWeekNavigationKeyboard(weekStart time.Time) tgbotapi.InlineKeyboardMar
 	prevWeek := weekStart.AddDate(0, 0, -7)
 	nextWeek := weekStart.AddDate(0, 0, 7)
 
-	// Первая строка: кнопки для перехода к предыдущей и следующей неделе
+	// Кнопки навигации с компактными подписями
 	navRow := tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("◀️ Пред. неделя", fmt.Sprintf("week_prev_%s", prevWeek.Format("2006-01-02"))),
-		tgbotapi.NewInlineKeyboardButtonData("След. неделя ▶️", fmt.Sprintf("week_next_%s", nextWeek.Format("2006-01-02"))),
+		tgbotapi.NewInlineKeyboardButtonData("◀️ -1 нед.", fmt.Sprintf("week_prev_%s", prevWeek.Format("2006-01-02"))),
+		tgbotapi.NewInlineKeyboardButtonData("+1 нед. ▶️", fmt.Sprintf("week_next_%s", nextWeek.Format("2006-01-02"))),
 	)
 
-	// Вторая строка: кнопки с названиями дней недели
+	// Кнопки с названиями дней недели (с датой)
 	var dayRow []tgbotapi.InlineKeyboardButton
 	dayNames := []string{"П", "В", "С", "Ч", "П", "С", "В"}
 	for i := 0; i < 7; i++ {
 		day := weekStart.AddDate(0, 0, i)
-		dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(dayNames[i], fmt.Sprintf("day_%s", day.Format("2006-01-02"))))
+		dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(
+			fmt.Sprintf("%s %s", dayNames[i], day.Format("02.01")),
+			fmt.Sprintf("day_%s", day.Format("2006-01-02")),
+		))
 	}
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(navRow, dayRow)
+	// Добавляем кнопку "Сегодня" (возврат к текущей неделе)
+	todayRow := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("📅 Сегодня", "week_today"),
+	)
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(navRow, dayRow, todayRow)
 	return keyboard
 }
 
@@ -168,86 +176,68 @@ func GetScheduleByTeacherCachedPaginated(teacherRegCode string, limit, offset in
 	return schedules[offset:end], totalRecords, nil
 }
 
-func FormatSchedulesGroupedByDay(schedules []models.Schedule, currentPage, totalPages int, mode string, user *models.User) string {
+func FormatSchedulesGroupedByDay(
+	schedules []models.Schedule,
+	currentPage, totalPages int,
+	mode string,
+	user *models.User,
+) string {
 	if len(schedules) == 0 {
-		return "Расписание не найдено."
+		return "Нет занятий на выбранный день."
 	}
 
-	// Если показываем полный день, информацию о страницах можно убрать
-	// msgText := fmt.Sprintf("<b>Расписание (страница %d из %d)</b>\n\n", currentPage, totalPages)
-	// Для дневного отображения можно использовать заголовок без пагинации:
-	msgText := "<b>Расписание на выбранный день</b>\n\n"
+	// Заголовок
+	msgText := "📅 <b>Расписание на выбранный день</b>\n\n"
 
-	// Группируем записи по дате (без учета времени)
-	type dayKey string // формат: YYYY-MM-DD
+	// Группируем занятия по дате
+	type dayKey string
 	grouped := make(map[dayKey][]models.Schedule)
 	for _, s := range schedules {
 		dateOnly := s.ScheduleTime.Format("2006-01-02")
 		grouped[dayKey(dateOnly)] = append(grouped[dayKey(dateOnly)], s)
 	}
 
-	// Сортируем даты по возрастанию
+	// Сортируем даты
 	var sortedDates []string
 	for k := range grouped {
 		sortedDates = append(sortedDates, string(k))
 	}
 	sort.Strings(sortedDates)
 
-	// Получаем справочники по курсам и преподавателям
-	courseMap := make(map[int64]string)
-	teacherMap := make(map[string]string)
-	{
-		rowsCourses, err := db.DB.Query("SELECT id, name FROM courses")
-		if err == nil {
-			defer rowsCourses.Close()
-			for rowsCourses.Next() {
-				var id int64
-				var name string
-				_ = rowsCourses.Scan(&id, &name)
-				courseMap[id] = name
-			}
-		}
-		rowsTeachers, err := db.DB.Query("SELECT registration_code, name FROM users WHERE role = 'teacher'")
-		if err == nil {
-			defer rowsTeachers.Close()
-			for rowsTeachers.Next() {
-				var regCode, name string
-				_ = rowsTeachers.Scan(&regCode, &name)
-				teacherMap[regCode] = name
-			}
-		}
-	}
+	// Если нужны красивые названия курсов/преподавателей, здесь можно загрузить справочники.
+	// Сейчас оставляем базовую логику.
 
-	// Формируем текст для каждого дня
+	// Формируем текст
 	for _, dateStr := range sortedDates {
 		t, err := time.Parse("2006-01-02", dateStr)
 		if err != nil {
 			continue
 		}
-		// Заголовок дня с эмодзи календаря и названием дня недели
-		dayHeader := fmt.Sprintf("📅 <b>%s (%s)</b>\n", t.Format("02.01.2006"), weekdayName(t.Weekday()))
-		msgText += dayHeader
+		// Заголовок дня + разделитель
+		msgText += fmt.Sprintf("🗓 <b>%s (%s)</b>\n", t.Format("02.01.2006"), weekdayName(t.Weekday()))
+		msgText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
-		// Для каждого занятия за этот день выводим информацию
 		for _, s := range grouped[dayKey(dateStr)] {
 			timeStr := s.ScheduleTime.Format("15:04")
-			courseName := courseMap[s.CourseID]
-			teacherName := teacherMap[s.TeacherRegCode]
 
+			// Для преподавателя (mode == "teacher")
 			if mode == "teacher" {
-				// Для преподавателя – отображаем группу
-				msgText += fmt.Sprintf("   • <b>%s</b> — %s\n     <i>Группа:</i> %s, <i>Аудитория:</i> %s, <i>Тип:</i> %s, <i>Длительность:</i> %d мин.\n",
-					timeStr, courseName, s.GroupName, s.Auditory, s.LessonType, s.Duration)
+				msgText += fmt.Sprintf(
+					"  • <b>%s</b> — %s\n    👥 Гр.: %s, 🚪 Ауд.: %s, 📋 %s, ⏱ %d мин.\n",
+					timeStr, s.Description, s.GroupName, s.Auditory, s.LessonType, s.Duration,
+				)
 			} else {
-				// Для студента – отображаем имя преподавателя
-				msgText += fmt.Sprintf("   • <b>%s</b> — %s\n     <i>Преп.:</i> %s, <i>Аудитория:</i> %s, <i>Тип:</i> %s, <i>Длительность:</i> %d мин.\n",
-					timeStr, courseName, teacherName, s.Auditory, s.LessonType, s.Duration)
+				// Для студента
+				msgText += fmt.Sprintf(
+					"  • <b>%s</b> — %s\n    👨‍🏫 Преп.: %s, 🚪 Ауд.: %s, 📋 %s, ⏱ %d мин.\n",
+					timeStr, s.Description, s.TeacherRegCode, s.Auditory, s.LessonType, s.Duration,
+				)
 			}
 		}
-		msgText += "\n" // отступ между днями
+		msgText += "\n"
 	}
 
-	// Подвал сообщения
-	msgText += "<i>Надеемся, расписание поможет вам организовать учебный процесс!</i>"
+	// Завершающая строка
+	msgText += "<i>Пусть день пройдёт продуктивно!</i>"
 	return msgText
 }

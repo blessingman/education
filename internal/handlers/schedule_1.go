@@ -39,7 +39,6 @@ func ShowScheduleWeek(chatID int64, bot *tgbotapi.BotAPI, user *models.User, wee
 // ShowScheduleDay выводит расписание за конкретный день.
 // Принимает chatID, bot, пользователя и выбранный день (time.Time).
 func ShowScheduleDay(chatID int64, bot *tgbotapi.BotAPI, user *models.User, day time.Time) error {
-	// Определяем начало и конец дня
 	dayStr := day.Format("2006-01-02")
 	dayStart, _ := time.Parse("2006-01-02", dayStr)
 	dayEnd := dayStart.AddDate(0, 0, 1).Add(-time.Second) // последний момент выбранного дня
@@ -55,28 +54,34 @@ func ShowScheduleDay(chatID int64, bot *tgbotapi.BotAPI, user *models.User, day 
 		return err
 	}
 
-	// Форматируем расписание для одного дня.
-	// Функция FormatSchedulesGroupedByDay вернет блок с информацией за этот день.
+	// Формируем текст расписания за этот день
 	text := FormatSchedulesGroupedByDay(schedules, 1, 1, user.Role, user)
 
-	// Формируем клавиатуру с дополнительными кнопками:
-	// 1. "Назад к неделе"
-	// 2. "Фильтр по курсу" – для выбора отображения только занятий по выбранному курсу
-	// 3. (Если преподаватель) "Редактировать" – для начала процесса редактирования расписания за этот день
+	// Клавиатура:
+	// 1) "← Нед." (назад к неделе)
+	// 2) (Опционально) фильтры или редактирование (зависит от ваших нужд)
 
 	var keyboardRows [][]tgbotapi.InlineKeyboardButton
 
-	// Кнопка "Назад к неделе"
-	// Вычисляем начало недели для выбранного дня (предполагается, что неделя начинается с понедельника)
+	// Вычисляем начало недели (предполагаем, что неделя начинается с понедельника)
 	offset := int(dayStart.Weekday())
 	if offset == 0 {
 		offset = 7
 	}
 	weekStart := dayStart.AddDate(0, 0, -(offset - 1))
-	backButton := tgbotapi.NewInlineKeyboardButtonData("◀️ Назад к неделе", fmt.Sprintf("week_prev_%s", weekStart.Format("2006-01-02")))
+
+	backLabel := "← Нед."
+	backData := fmt.Sprintf("week_prev_%s", weekStart.Format("2006-01-02"))
+	backButton := tgbotapi.NewInlineKeyboardButtonData(backLabel, backData)
+
 	keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(backButton))
 
+	// Пример: можно добавить фильтр по курсу, редактирование, и т. д.
+	// filterButton := tgbotapi.NewInlineKeyboardButtonData("🔎 Фильтр", "filter_day") // Пример
+	// keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(filterButton))
+
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(keyboardRows...)
+
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = keyboard
@@ -166,8 +171,12 @@ func GetSchedulesForGroupByDateRange(group string, start, end time.Time) ([]mode
 	return schedules, rows.Err()
 }
 
-func FormatSchedulesByWeek(schedules []models.Schedule, weekStart, weekEnd time.Time, mode string, user *models.User) string {
-	// Опционально: подсчет прогресса
+func FormatSchedulesByWeek(
+	schedules []models.Schedule,
+	weekStart, weekEnd time.Time,
+	mode string,
+	user *models.User,
+) string {
 	total := len(schedules)
 	passed := 0
 	now := time.Now()
@@ -181,11 +190,14 @@ func FormatSchedulesByWeek(schedules []models.Schedule, weekStart, weekEnd time.
 		progressPercent = (passed * 100) / total
 	}
 
-	msgText := fmt.Sprintf("<b>Расписание на неделю (%s – %s)</b>\nПрогресс: <b>%d%%</b> завершено\n",
-		weekStart.Format("02.01.2006"), weekEnd.Format("02.01.2006"), progressPercent)
+	// Заголовок недели + прогресс
+	msgText := fmt.Sprintf(
+		"🗓 <b>Неделя %s – %s</b>\nПрогресс: <b>%d%%</b>\n",
+		weekStart.Format("02.01.2006"), weekEnd.Format("02.01.2006"), progressPercent,
+	)
 	msgText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-	// Группируем занятия по датам
+	// Группируем по дате
 	type dayKey string
 	grouped := make(map[dayKey][]models.Schedule)
 	for _, s := range schedules {
@@ -193,37 +205,44 @@ func FormatSchedulesByWeek(schedules []models.Schedule, weekStart, weekEnd time.
 		grouped[dayKey(dateOnly)] = append(grouped[dayKey(dateOnly)], s)
 	}
 
-	// Сортировка дат
+	// Сортируем даты
 	var sortedDates []string
 	for k := range grouped {
 		sortedDates = append(sortedDates, string(k))
 	}
 	sort.Strings(sortedDates)
 
-	// Формируем текст для каждого дня
-	for _, dateStr := range sortedDates {
-		t, err := time.Parse("2006-01-02", dateStr)
-		if err != nil {
-			continue
-		}
-		dayHeader := fmt.Sprintf("📅 <b>%s (%s)</b>\n", t.Format("02.01.2006"), weekdayName(t.Weekday()))
-		msgText += dayHeader
+	// Идём по каждому дню (понедельник–воскресенье)
+	for d := 0; d < 7; d++ {
+		day := weekStart.AddDate(0, 0, d)
+		dayStr := day.Format("2006-01-02")
+		dayName := weekdayName(day.Weekday())
 
-		for _, s := range grouped[dayKey(dateStr)] {
-			timeStr := s.ScheduleTime.Format("15:04")
-			// Используем старую логику: если вам нужны красивые имена курса и преподавателя, используйте справочники
-			// Но если они не нужны, можно выводить базовую информацию из Schedule
-			if mode == "teacher" {
-				msgText += fmt.Sprintf("  ⏰ <b>%s</b> – %s\n    <i>Группа:</i> %s, <i>Аудитория:</i> %s, <i>Тип:</i> %s\n",
-					timeStr, s.Description, s.GroupName, s.Auditory, s.LessonType)
-			} else {
-				msgText += fmt.Sprintf("  ⏰ <b>%s</b> – %s\n    <i>Преп.:</i> %s, <i>Аудитория:</i> %s, <i>Тип:</i> %s\n",
-					timeStr, s.Description, s.TeacherRegCode, s.Auditory, s.LessonType)
+		// Заголовок дня
+		msgText += fmt.Sprintf("🗓 <b>%s (%s)</b>\n", day.Format("02.01.2006"), dayName)
+		msgText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+
+		if entries, ok := grouped[dayKey(dayStr)]; ok {
+			for _, s := range entries {
+				timeStr := s.ScheduleTime.Format("15:04")
+				if mode == "teacher" {
+					msgText += fmt.Sprintf(
+						"  • <b>%s</b> — %s\n    👥 Гр.: %s, 🚪 Ауд.: %s, 📋 %s, ⏱ %d мин.\n",
+						timeStr, s.Description, s.GroupName, s.Auditory, s.LessonType, s.Duration,
+					)
+				} else {
+					msgText += fmt.Sprintf(
+						"  • <b>%s</b> — %s\n    👨‍🏫 Преп.: %s, 🚪 Ауд.: %s, 📋 %s, ⏱ %d мин.\n",
+						timeStr, s.Description, s.TeacherRegCode, s.Auditory, s.LessonType, s.Duration,
+					)
+				}
 			}
+		} else {
+			msgText += "  Нет занятий.\n"
 		}
 		msgText += "\n"
 	}
 
-	msgText += "<i>Планируйте свою неделю с умом!</i>"
+	msgText += "<i>Планируйте неделю с умом!</i>"
 	return msgText
 }

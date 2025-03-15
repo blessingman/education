@@ -115,26 +115,31 @@ func BuildWeekNavigationKeyboardFiltered(weekStart time.Time, schedules []models
 		eventDays[dayStr] = true
 	}
 
-	// Кнопки для перехода на предыдущую и следующую неделю
+	// Дата предыдущей и следующей недели
 	prevWeek := weekStart.AddDate(0, 0, -7)
 	nextWeek := weekStart.AddDate(0, 0, 7)
+
+	// Кнопки "⬅️ -1 нед" и "+1 нед ➡️"
 	navRow := tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("◀️ Пред. неделя", fmt.Sprintf("week_prev_%s", prevWeek.Format("2006-01-02"))),
-		tgbotapi.NewInlineKeyboardButtonData("След. неделя ▶️", fmt.Sprintf("week_next_%s", nextWeek.Format("2006-01-02"))),
+		tgbotapi.NewInlineKeyboardButtonData("⬅️ -1 нед", fmt.Sprintf("week_prev_%s", prevWeek.Format("2006-01-02"))),
+		tgbotapi.NewInlineKeyboardButtonData("+1 нед ➡️", fmt.Sprintf("week_next_%s", nextWeek.Format("2006-01-02"))),
 	)
 
-	// Кнопки с названиями дней недели
+	// Сокращённые названия дней: Пн, Вт, Ср, Чт, Пт, Сб, Вс
 	dayNames := []string{"П", "В", "С", "Ч", "П", "С", "В"}
+
 	var dayRow []tgbotapi.InlineKeyboardButton
 	for i := 0; i < 7; i++ {
 		day := weekStart.AddDate(0, 0, i)
 		dayStr := day.Format("2006-01-02")
+
+		// Если есть занятия – обычная кнопка, иначе "❌"
 		if eventDays[dayStr] {
-			// Если в этот день есть событие – обычная кнопка
-			dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(dayNames[i], fmt.Sprintf("day_%s", dayStr)))
+			dayLabel := fmt.Sprintf("%s %s", dayNames[i], day.Format("02"))
+			dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(dayLabel, fmt.Sprintf("day_%s", dayStr)))
 		} else {
-			// Если нет – выводим кнопку с "❌" и callback "ignore"
-			dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData("❌"+dayNames[i], "ignore"))
+			dayLabel := fmt.Sprintf("❌%s", dayNames[i])
+			dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(dayLabel, "ignore"))
 		}
 	}
 
