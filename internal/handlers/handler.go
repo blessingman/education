@@ -295,6 +295,51 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		ShowScheduleWeek(chatID, bot, user, weekStart)
 		return
 	}
+	if data == "mode_day" {
+		// Показываем расписание на сегодня
+		err := ShowScheduleDay(chatID, bot, user, time.Now())
+		if err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка отображения расписания"))
+		}
+		return
+	} else if data == "mode_week" {
+		// Вычисляем начало недели (например, понедельник)
+		now := time.Now()
+		offset := int(now.Weekday())
+		if offset == 0 {
+			offset = 7
+		}
+		weekStart := now.AddDate(0, 0, -(offset - 1))
+		err := ShowScheduleWeek(chatID, bot, user, weekStart)
+		if err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка отображения расписания"))
+		}
+		return
+	} else if data == "mode_month" {
+		// Здесь можно реализовать ShowScheduleMonth, если понадобится
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Режим 'Месяц' ещё не реализован"))
+		return
+	}
+	// В начале ProcessCallback, после получения user
+	if data == "show_timeline" {
+		// Пример: если минимальный таймлайн показывается для текущего дня,
+		// можно задать список слотов и карту событий
+		slots := []string{"08:00", "10:00", "12:00", "14:00", "16:00", "18:00"}
+		events := map[string]string{
+			"08:00": "Математика (Иванов)",
+			"10:00": "Физика (Петров)",
+			"12:00": "Практика (Сидоров)",
+			"14:00": "Лабораторная (Кузнецов)",
+			// Можно не задавать событие для остальных слотов
+		}
+		timelineText := BuildMinimalTimeline(slots, time.Now(), events)
+		msg := tgbotapi.NewMessage(chatID, timelineText)
+		msg.ParseMode = "HTML"
+		if err := sendAndTrackMessage(bot, msg); err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка отображения таймлайна"))
+		}
+		return
+	}
 
 	// --- 2) Навигация по конкретному дню ---
 	if strings.HasPrefix(data, "day_") {

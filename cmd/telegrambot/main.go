@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -13,6 +14,8 @@ import (
 const workerCount = 10 // число воркеров
 
 func main() {
+
+	fmt.Println("fasdfsdf")
 	db.InitDB("education.db")
 
 	bot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_BOT_TOKEN"))

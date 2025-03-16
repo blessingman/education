@@ -161,6 +161,98 @@ func BuildWeekNavigationKeyboardFilteredWithFilter(weekStart time.Time, schedule
 	return tgbotapi.NewInlineKeyboardMarkup(allRows...)
 }
 
+func ShowScheduleModeMenu(chatID int64, bot *tgbotapi.BotAPI) error {
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("День", "mode_day"),
+			tgbotapi.NewInlineKeyboardButtonData("Неделя", "mode_week"),
+			tgbotapi.NewInlineKeyboardButtonData("Месяц", "mode_month"),
+		),
+	)
+	msg := tgbotapi.NewMessage(chatID, "Выберите режим отображения расписания:")
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = keyboard
+	return sendAndTrackMessage(bot, msg)
+}
+
+func BuildMinimalTimeline(slots []string, currentTime time.Time, events map[string]string) string {
+	// slots – временные метки, например: ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"]
+	// events – карта: ключ – временная метка (например, "08:00"), значение – название события (например, "Математика (Иванов)")
+	// currentTime – текущее время
+
+	// Первая строка: временные метки
+	timeline := "⏰ "
+	for _, slot := range slots {
+		timeline += fmt.Sprintf("%-12s", slot)
+	}
+
+	// Вторая строка: линия с квадратными метками
+	line := ""
+	// Заполняем каждый слот линией: если в слоте есть событие – обычный квадрат, если это текущий интервал – выделенный квадрат.
+	for i, slot := range slots {
+		// Определяем, попадает ли текущее время в интервал между данным слотом и следующим
+		var marker string
+		// Если в данный слот есть событие (в events) — ставим квадрат,
+		// иначе выводим разделительную линию.
+		if _, ok := events[slot]; ok {
+			marker = "🔲"
+		} else {
+			marker = "────────────"
+		}
+
+		// Если есть следующий слот, проверяем, находится ли текущее время в интервале.
+		if i < len(slots)-1 {
+			t1, err1 := time.Parse("15:04", slot)
+			t2, err2 := time.Parse("15:04", slots[i+1])
+			if err1 == nil && err2 == nil {
+				// Прикрепляем текущую дату к слоту
+				t1 = time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), t1.Hour(), t1.Minute(), 0, 0, currentTime.Location())
+				t2 = time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), t2.Hour(), t2.Minute(), 0, 0, currentTime.Location())
+				if currentTime.After(t1) && currentTime.Before(t2) {
+					marker = "🔳"
+				}
+			}
+		}
+		line += fmt.Sprintf("%-12s", marker)
+	}
+
+	// Третья строка: события (если есть)
+	eventsLine := ""
+	for _, slot := range slots {
+		if ev, ok := events[slot]; ok {
+			eventsLine += fmt.Sprintf("%-12s", ev)
+		} else {
+			eventsLine += fmt.Sprintf("%-12s", "")
+		}
+	}
+
+	// Определяем, когда начнется следующее занятие
+	var nextSlot string
+	for _, slot := range slots {
+		t, err := time.Parse("15:04", slot)
+		if err != nil {
+			continue
+		}
+		t = time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), t.Hour(), t.Minute(), 0, 0, currentTime.Location())
+		if currentTime.Before(t) {
+			nextSlot = slot
+			break
+		}
+	}
+	var remaining string
+	if nextSlot != "" {
+		tNext, _ := time.Parse("15:04", nextSlot)
+		tNext = time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), tNext.Hour(), tNext.Minute(), 0, 0, currentTime.Location())
+		minutesLeft := int(tNext.Sub(currentTime).Minutes())
+		remaining = fmt.Sprintf("Сейчас: %s (до следующего занятия осталось %d мин.)", currentTime.Format("15:04"), minutesLeft)
+	} else {
+		remaining = fmt.Sprintf("Сейчас: %s", currentTime.Format("15:04"))
+	}
+
+	result := timeline + "\n" + line + "\n" + eventsLine + "\n\n" + remaining
+	return result
+}
+
 // weekdayName возвращает название дня недели на русском языке.
 func weekdayName(wd time.Weekday) string {
 	switch wd {
