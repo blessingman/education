@@ -27,11 +27,24 @@ func ShowScheduleWeek(chatID int64, bot *tgbotapi.BotAPI, user *models.User, wee
 		return err
 	}
 
-	// Применяем фильтры к полученному расписанию
+	// Получаем информацию о фильтрах
 	filter := GetUserFilter(chatID)
 	filteredSchedules := ApplyFilters(schedules, filter)
 
 	text := FormatSchedulesByWeek(filteredSchedules, weekStart, weekEnd, user.Role, user)
+
+	// Если фильтры активны, добавляем информацию о них в сообщение
+	if filter.CourseName != "" || filter.LessonType != "" {
+		filterInfo := "\n<b>📌 Активные фильтры:</b>\n"
+		if filter.CourseName != "" {
+			filterInfo += fmt.Sprintf("• Курс: <b>%s</b>\n", filter.CourseName)
+		}
+		if filter.LessonType != "" {
+			filterInfo += fmt.Sprintf("• Тип занятия: <b>%s</b>\n", filter.LessonType)
+		}
+		text = text + filterInfo
+	}
+
 	// Создаём базовую клавиатуру
 	baseRows := [][]tgbotapi.InlineKeyboardButton{
 		{
@@ -41,6 +54,13 @@ func ShowScheduleWeek(chatID int64, bot *tgbotapi.BotAPI, user *models.User, wee
 		},
 		{}, // Пустая строка для разделения
 	}
+
+	// Добавляем отдельную кнопку фильтров
+	filterRow := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🔍 Настроить фильтры", "filter_menu"),
+	)
+	baseRows = append(baseRows, filterRow)
+
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(baseRows...)
 
 	// Объединяем с клавиатурой режимов

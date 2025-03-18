@@ -48,8 +48,19 @@ func ShowEnhancedScheduleDay(chatID int64, bot *tgbotapi.BotAPI, user *models.Us
 
 	// Добавляем кнопку фильтров
 	filterRow := tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("🔍 Фильтры", "filter_course_menu"),
+		tgbotapi.NewInlineKeyboardButtonData("🔍 Настроить фильтры", "filter_menu"),
 	)
+
+	// Если фильтры активны, добавляем информацию о них в сообщение
+	if filter.CourseName != "" || filter.LessonType != "" {
+		text += "\n\n<b>📌 Активные фильтры:</b>\n"
+		if filter.CourseName != "" {
+			text += fmt.Sprintf("• Курс: <b>%s</b>\n", filter.CourseName)
+		}
+		if filter.LessonType != "" {
+			text += fmt.Sprintf("• Тип занятия: <b>%s</b>\n", filter.LessonType)
+		}
+	}
 
 	// Объединяем все ряды кнопок
 	var allRows [][]tgbotapi.InlineKeyboardButton

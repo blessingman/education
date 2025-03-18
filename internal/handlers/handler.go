@@ -443,28 +443,8 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	// --- 3) Фильтрация по курсу ---
 	// 3.1) Кнопка, открывающая меню выбора курса
 	if data == "filter_menu" {
-		bot.Request(tgbotapi.NewCallback(callback.ID, "Выбор курса для фильтрации"))
-
-		// Получаем список всех курсов из БД
-		courses, err := GetAllCourses()
-		if err != nil || len(courses) == 0 {
-			msg := tgbotapi.NewMessage(chatID, "Курсы не найдены.")
-			bot.Send(msg)
-			return
-		}
-
-		// Генерируем кнопки для каждого курса
-		var rows [][]tgbotapi.InlineKeyboardButton
-		for _, c := range courses {
-			courseName := c.Name
-			btn := tgbotapi.NewInlineKeyboardButtonData(courseName, "filter_course_"+courseName)
-			rows = append(rows, tgbotapi.NewInlineKeyboardRow(btn))
-		}
-
-		keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
-		msg := tgbotapi.NewMessage(chatID, "Выберите курс для фильтра:")
-		msg.ReplyMarkup = keyboard
-		bot.Send(msg)
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Выбор фильтра"))
+		ShowFilterMenu(chatID, bot)
 		return
 	}
 
@@ -496,19 +476,24 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 
 	case "menu_schedule":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "🗓 Расписание"))
-		// Добавим кнопку фильтров в меню выбора режима
+		// Улучшенное меню выбора режима расписания
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			// Первый ряд с режимами просмотра
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("День", "mode_day"),
-				tgbotapi.NewInlineKeyboardButtonData("Неделя", "mode_week"),
-				tgbotapi.NewInlineKeyboardButtonData("🔍 Фильтры", "filter_course_menu"),
+				tgbotapi.NewInlineKeyboardButtonData("📅 День", "mode_day"),
+				tgbotapi.NewInlineKeyboardButtonData("📊 Неделя", "mode_week"),
+			),
+			// Второй ряд с кнопкой фильтров, выделенной и заметной
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔍 Настроить фильтры", "filter_menu"),
 			),
 		)
-		msg := tgbotapi.NewMessage(chatID, "Выберите режим отображения расписания или настройте фильтры:")
+		msg := tgbotapi.NewMessage(chatID, "<b>Просмотр расписания</b>\n\nВыберите режим отображения или настройте фильтры:")
 		msg.ParseMode = "HTML"
 		msg.ReplyMarkup = keyboard
 		sendAndTrackMessage(bot, msg)
 		return
+
 	case "menu_materials":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "📚 Материалы"))
 		user, _ := auth.GetUserByTelegramID(chatID)
@@ -620,48 +605,6 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 
 	// Если callback не относится к главному меню, передаём обработку регистрации/логина
 	RegistrationProcessCallback(callback, bot)
-}
-
-// Функция для отображения меню выбора курса
-func ShowCourseFilterMenu(chatID int64, bot *tgbotapi.BotAPI) {
-	// Получаем список курсов из базы данных
-	courses, err := GetAllCourses()
-	if err != nil {
-		fmt.Println("Ошибка получения списка курсов:", err)
-		msg := tgbotapi.NewMessage(chatID, "Ошибка при загрузке списка курсов")
-		sendAndTrackMessage(bot, msg)
-		return
-	}
-
-	var rows [][]tgbotapi.InlineKeyboardButton
-
-	// Если список курсов пуст, сообщаем об этом
-	if len(courses) == 0 {
-		msg := tgbotapi.NewMessage(chatID, "В базе данных не найдены курсы")
-		sendAndTrackMessage(bot, msg)
-		return
-	}
-
-	// Создаем кнопки для каждого курса из базы данных
-	for _, course := range courses {
-		courseID := fmt.Sprintf("%d", course.ID)
-		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(course.Name, "filter_course_"+courseID+"_"+course.Name),
-		))
-	}
-
-	// Добавляем кнопку для сброса фильтра и возврата
-	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("❌ Сбросить фильтр курса", "filter_course_reset"),
-	))
-	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("◀️ Назад к фильтрам", "filter_menu"),
-	))
-
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
-	msg := tgbotapi.NewMessage(chatID, "Выберите курс для фильтрации:")
-	msg.ReplyMarkup = keyboard
-	sendAndTrackMessage(bot, msg)
 }
 
 // Вспомогательная функция для конвертации строкового ID в int64
