@@ -5,6 +5,7 @@ import (
 	"education/internal/models"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -27,8 +28,22 @@ func ShowScheduleWeek(chatID int64, bot *tgbotapi.BotAPI, user *models.User, wee
 	}
 
 	text := FormatSchedulesByWeek(schedules, weekStart, weekEnd, user.Role, user)
-	// Вместо BuildWeekNavigationKeyboard(...) используем нашу новую функцию
-	keyboard := BuildWeekNavigationKeyboardFiltered(weekStart, schedules)
+	// Создаём базовую клавиатуру
+	baseRows := [][]tgbotapi.InlineKeyboardButton{
+		{
+			tgbotapi.NewInlineKeyboardButtonData("◄", fmt.Sprintf("week_prev_%s", weekStart.AddDate(0, 0, -7).Format("2006-01-02"))),
+			tgbotapi.NewInlineKeyboardButtonData("Сегодня", "week_today"),
+			tgbotapi.NewInlineKeyboardButtonData("►", fmt.Sprintf("week_next_%s", weekStart.AddDate(0, 0, 7).Format("2006-01-02"))),
+		},
+		{}, // Пустая строка для разделения
+	}
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(baseRows...)
+
+	// Объединяем с клавиатурой режимов
+	modeKeyboard := BuildModeSwitchKeyboard("mode_week")
+	if modeKeyboard.InlineKeyboard != nil {
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, modeKeyboard.InlineKeyboard...)
+	}
 
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "HTML"
@@ -39,9 +54,8 @@ func ShowScheduleWeek(chatID int64, bot *tgbotapi.BotAPI, user *models.User, wee
 // ShowScheduleDay выводит расписание за конкретный день.
 // Принимает chatID, bot, пользователя и выбранный день (time.Time).
 func ShowScheduleDay(chatID int64, bot *tgbotapi.BotAPI, user *models.User, day time.Time) error {
-	dayStr := day.Format("2006-01-02")
-	dayStart, _ := time.Parse("2006-01-02", dayStr)
-	dayEnd := dayStart.AddDate(0, 0, 1).Add(-time.Second) // последний момент выбранного дня
+	dayStart := day.Truncate(24 * time.Hour)
+	dayEnd := dayStart.Add(24*time.Hour - time.Second)
 
 	var schedules []models.Schedule
 	var err error
@@ -54,49 +68,24 @@ func ShowScheduleDay(chatID int64, bot *tgbotapi.BotAPI, user *models.User, day 
 		return err
 	}
 
-	// Формируем текст расписания за этот день
-	text := FormatSchedulesGroupedByDay(schedules, 1, 1, user.Role, user)
-
-	// Клавиатура:
-	// 1) "← Нед." (назад к неделе)
-	// 2) (Опционально) фильтры или редактирование (зависит от ваших нужд)
-
-	var keyboardRows [][]tgbotapi.InlineKeyboardButton
-
-	// Вычисляем начало недели (предполагаем, что неделя начинается с понедельника)
-	offset := int(dayStart.Weekday())
-	if offset == 0 {
-		offset = 7
-	}
-	weekStart := dayStart.AddDate(0, 0, -(offset - 1))
-
-	backLabel := "← Нед."
-	backData := fmt.Sprintf("week_prev_%s", weekStart.Format("2006-01-02"))
-	backButton := tgbotapi.NewInlineKeyboardButtonData(backLabel, backData)
-
-	keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(backButton))
-
-	// Пример: можно добавить фильтр по курсу, редактирование, и т. д.
-	// filterButton := tgbotapi.NewInlineKeyboardButtonData("🔎 Фильтр", "filter_day") // Пример
-	// keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(filterButton))
-
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(keyboardRows...)
+	// Передаём именно выбранный день, а не time.Now()
+	text := BuildCalendarTimeline(schedules, day)
+	keyboard := BuildModeSwitchKeyboard("mode_day")
 
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = keyboard
-
 	return sendAndTrackMessage(bot, msg)
 }
 
 func GetSchedulesForTeacherByDateRange(teacherRegCode string, start, end time.Time) ([]models.Schedule, error) {
 	query := `
-       SELECT
-         id, course_id, group_name, teacher_reg_code,
-         schedule_time, description, auditory, lesson_type, duration
-       FROM schedules
-       WHERE teacher_reg_code = ? AND date(schedule_time) BETWEEN ? AND ?
-       ORDER BY schedule_time
+        SELECT
+            id, course_id, group_name, teacher_reg_code,
+            schedule_time, description, auditory, lesson_type, duration
+        FROM schedules
+        WHERE teacher_reg_code = ? AND date(schedule_time) BETWEEN ? AND ?
+        ORDER BY schedule_time
     `
 	rows, err := db.DB.Query(query, teacherRegCode, start.Format("2006-01-02"), end.Format("2006-01-02"))
 	if err != nil {
@@ -117,7 +106,7 @@ func GetSchedulesForTeacherByDateRange(teacherRegCode string, start, end time.Ti
 			&s.Description,
 			&s.Auditory,
 			&s.LessonType,
-			&s.Duration, // <-- Считываем duration
+			&s.Duration,
 		); err != nil {
 			return nil, err
 		}
@@ -177,72 +166,74 @@ func FormatSchedulesByWeek(
 	mode string,
 	user *models.User,
 ) string {
-	total := len(schedules)
-	passed := 0
-	now := time.Now()
+	if len(schedules) == 0 {
+		return fmt.Sprintf("📆 <b>Неделя %s – %s</b>\n\n🔍 <i>Нет занятий на эту неделю</i>",
+			weekStart.Format("02.01.2006"), weekEnd.Format("02.01.2006"))
+	}
+
+	// Группировка по дням
+	grouped := make(map[string][]models.Schedule)
 	for _, s := range schedules {
-		if s.ScheduleTime.Before(now) {
-			passed++
-		}
-	}
-	progressPercent := 0
-	if total > 0 {
-		progressPercent = (passed * 100) / total
+		date := s.ScheduleTime.Format("2006-01-02")
+		grouped[date] = append(grouped[date], s)
 	}
 
-	// Заголовок недели + прогресс
-	msgText := fmt.Sprintf(
-		"🗓 <b>Неделя %s – %s</b>\nПрогресс: <b>%d%%</b>\n",
-		weekStart.Format("02.01.2006"), weekEnd.Format("02.01.2006"), progressPercent,
-	)
-	msgText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("📆 <b>Неделя %s – %s</b>\n\n",
+		weekStart.Format("02.01.2006"), weekEnd.Format("02.01.2006")))
 
-	// Группируем по дате
-	type dayKey string
-	grouped := make(map[dayKey][]models.Schedule)
-	for _, s := range schedules {
-		dateOnly := s.ScheduleTime.Format("2006-01-02")
-		grouped[dayKey(dateOnly)] = append(grouped[dayKey(dateOnly)], s)
-	}
-
-	// Сортируем даты
-	var sortedDates []string
-	for k := range grouped {
-		sortedDates = append(sortedDates, string(k))
-	}
-	sort.Strings(sortedDates)
-
-	// Идём по каждому дню (понедельник–воскресенье)
+	// Проходим по дням недели
+	hasEvents := false
 	for d := 0; d < 7; d++ {
 		day := weekStart.AddDate(0, 0, d)
 		dayStr := day.Format("2006-01-02")
-		dayName := weekdayName(day.Weekday())
 
-		// Заголовок дня
-		msgText += fmt.Sprintf("🗓 <b>%s (%s)</b>\n", day.Format("02.01.2006"), dayName)
-		msgText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+		if entries, ok := grouped[dayStr]; ok {
+			hasEvents = true
 
-		if entries, ok := grouped[dayKey(dayStr)]; ok {
+			// Заголовок дня
+			msg.WriteString(fmt.Sprintf("🗓 <b>%s (%s)</b>\n",
+				day.Format("02.01.2006"), weekdayName(day.Weekday())))
+			msg.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+			// Сортируем занятия по времени
+			sort.Slice(entries, func(i, j int) bool {
+				return entries[i].ScheduleTime.Before(entries[j].ScheduleTime)
+			})
+
 			for _, s := range entries {
 				timeStr := s.ScheduleTime.Format("15:04")
+				endTimeStr := s.ScheduleTime.Add(time.Duration(s.Duration) * time.Minute).Format("15:04")
+
+				// Полный блок информации о занятии
+				msg.WriteString(fmt.Sprintf("\n⏰ <b>%s - %s</b> (%d мин.)\n", timeStr, endTimeStr, s.Duration))
+				msg.WriteString(fmt.Sprintf("📚 <b>%s</b>\n", s.Description))
+
 				if mode == "teacher" {
-					msgText += fmt.Sprintf(
-						"  • <b>%s</b> — %s\n    👥 Гр.: %s, 🚪 Ауд.: %s, 📋 %s, ⏱ %d мин.\n",
-						timeStr, s.Description, s.GroupName, s.Auditory, s.LessonType, s.Duration,
-					)
+					msg.WriteString(fmt.Sprintf("👥 Группа: %s\n", s.GroupName))
 				} else {
-					msgText += fmt.Sprintf(
-						"  • <b>%s</b> — %s\n    👨‍🏫 Преп.: %s, 🚪 Ауд.: %s, 📋 %s, ⏱ %d мин.\n",
-						timeStr, s.Description, s.TeacherRegCode, s.Auditory, s.LessonType, s.Duration,
-					)
+					msg.WriteString(fmt.Sprintf("👨‍🏫 Преподаватель: %s\n", s.TeacherRegCode))
 				}
+
+				msg.WriteString(fmt.Sprintf("🚪 Аудитория: %s\n", s.Auditory))
+				msg.WriteString(fmt.Sprintf("📝 Тип: %s\n", s.LessonType))
 			}
-		} else {
-			msgText += "  Нет занятий.\n"
+			msg.WriteString("\n")
 		}
-		msgText += "\n"
 	}
 
-	msgText += "<i>Планируйте неделю с умом!</i>"
-	return msgText
+	if !hasEvents {
+		msg.WriteString("🔍 <i>Нет занятий на эту неделю</i>\n")
+	} else {
+		// Добавляем позитивное завершение
+		msg.WriteString("\n<i>✨ Удачной и продуктивной недели!</i>")
+	}
+
+	return msg.String()
+}
+
+// Короткие названия дней недели
+func weekdayShortName(wd time.Weekday) string {
+	names := []string{"Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"}
+	return names[wd]
 }

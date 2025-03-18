@@ -1,12 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
 	"education/internal/db"
-	"education/internal/handlers"
+	"education/internal/handlers" // This should include our schedule_month.go
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -14,8 +13,6 @@ import (
 const workerCount = 10 // число воркеров
 
 func main() {
-
-	fmt.Println("fasdfsdf")
 	db.InitDB("education.db")
 
 	bot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_BOT_TOKEN"))

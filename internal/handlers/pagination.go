@@ -241,3 +241,31 @@ func FormatSchedulesGroupedByDay(
 	msgText += "<i>Пусть день пройдёт продуктивно!</i>"
 	return msgText
 }
+
+func BuildModeSwitchKeyboard(currentMode string) tgbotapi.InlineKeyboardMarkup {
+	modes := []struct {
+		label string
+		data  string
+	}{
+		{"День", "mode_day"},
+		{"Неделя", "mode_week"},
+		// Удаляем опцию "Месяц"
+	}
+
+	var rows [][]tgbotapi.InlineKeyboardButton
+	var buttons []tgbotapi.InlineKeyboardButton
+	for _, mode := range modes {
+		var label string
+		if mode.data == currentMode {
+			label = fmt.Sprintf("★ %s", mode.label)
+		} else {
+			label = mode.label
+		}
+		buttons = append(buttons, tgbotapi.NewInlineKeyboardButtonData(label, mode.data))
+	}
+
+	// Put all mode buttons in one row for better UI
+	rows = append(rows, buttons)
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}

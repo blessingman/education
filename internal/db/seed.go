@@ -36,7 +36,7 @@ func SeedData() {
 	seedTeachers()
 	seedTeacherCourseGroups()
 	seedSchedules()
-	seedMaterials() // Добавляем функцию для генерации материалов
+	seedMaterials() // Генерация материалов
 }
 
 // Генерация групп в формате АА-21-01, АА-21-02 и т.д.
@@ -77,7 +77,7 @@ func seedFacultiesAndGroups() {
 	}
 }
 
-// Генерация курсов
+// Генерация курсов с более короткими и разнообразными названиями
 func seedCourses() {
 	var count int
 	err := DB.QueryRow(`SELECT COUNT(*) FROM courses`).Scan(&count)
@@ -86,9 +86,7 @@ func seedCourses() {
 	}
 	if count == 0 {
 		courseNames := []string{
-			"Математика", "Программирование", "Физика", "Алгоритмы и структуры данных",
-			"Теория вероятностей", "Линейная алгебра", "Электродинамика", "Квантовая механика",
-			"Базы данных", "Сети и телекоммуникации", "Механика", "Оптика",
+			"Матем", "Прог", "Физ", "Алгос", "Вероят", "Линейка", "Электро", "Квант", "База", "Сети", "Мех", "Опт", "Стат", "Дискр", "Комп",
 		}
 		for _, courseName := range courseNames {
 			_, err := DB.Exec(`
@@ -249,7 +247,7 @@ func seedTeacherCourseGroups() {
 			facultyGroups = append(facultyGroups, fg)
 		}
 
-		// Генерация связей: каждый преподаватель ведет 3–5 курсов для групп своего факультета
+		// Генерация связей: каждый преподаватель ведёт 3–5 курсов для групп своего факультета
 		for _, teacher := range teachers {
 			// Выбираем группы только с того же факультета, что и преподаватель
 			var teacherGroups []string
@@ -287,136 +285,141 @@ func seedTeacherCourseGroups() {
 	}
 }
 
-// Генерация расписания
-// Генерация расписания
-// Обновлённая функция генерации расписания с дополнительными полями
+// Генерация расписания для преподавателей на 3 месяца.
+// Для каждого преподавателя в рабочие дни (понедельник-пятница) генерируется от 3 до 7 пар.
+// При этом выбранные временные слоты сортируются, и для каждой пары длительность подбирается так,
+// чтобы конец текущей пары не пересекался со следующим (для последней пары считается, что день заканчивается в 17:00).
 func seedSchedules() {
-	var count int
-	err := DB.QueryRow(`SELECT COUNT(*) FROM schedules`).Scan(&count)
+	// Очищаем таблицу schedules (TRUNCATE не поддерживается в SQLite)
+	_, err := DB.Exec(`DELETE FROM schedules`)
 	if err != nil {
-		log.Panicf("Ошибка при проверке таблицы schedules: %v", err)
+		log.Panicf("Не удалось очистить таблицу schedules: %v", err)
 	}
-	if count == 0 {
-		// Получаем все связи преподавателей, курсов и групп
-		rows, err := DB.Query(`SELECT teacher_reg_code, course_id, group_name FROM teacher_course_groups`)
-		if err != nil {
-			log.Panicf("Ошибка получения teacher_course_groups: %v", err)
-		}
-		defer rows.Close()
+	log.Println("Таблица schedules очищена. Генерация нового расписания...")
 
-		var teacherCourseGroups []struct {
+	// Получаем все связи преподавателей, курсов и групп
+	rows, err := DB.Query(`SELECT teacher_reg_code, course_id, group_name FROM teacher_course_groups`)
+	if err != nil {
+		log.Panicf("Ошибка получения teacher_course_groups: %v", err)
+	}
+	defer rows.Close()
+
+	// Группируем назначения (привязки) по преподавателю
+	teacherSchedules := make(map[string][]struct {
+		teacherRegCode string
+		courseID       int64
+		groupName      string
+	})
+	for rows.Next() {
+		var tcg struct {
 			teacherRegCode string
 			courseID       int64
 			groupName      string
 		}
-		for rows.Next() {
-			var tcg struct {
-				teacherRegCode string
-				courseID       int64
-				groupName      string
-			}
-			if err := rows.Scan(&tcg.teacherRegCode, &tcg.courseID, &tcg.groupName); err != nil {
-				log.Panicf("Ошибка сканирования teacher_course_groups: %v", err)
-			}
-			teacherCourseGroups = append(teacherCourseGroups, tcg)
+		if err := rows.Scan(&tcg.teacherRegCode, &tcg.courseID, &tcg.groupName); err != nil {
+			log.Panicf("Ошибка сканирования teacher_course_groups: %v", err)
+		}
+		teacherSchedules[tcg.teacherRegCode] = append(teacherSchedules[tcg.teacherRegCode], tcg)
+	}
+
+	// Фиксированные временные слоты (с перерывами):
+	//  1-я пара: 08:00 – 09:30
+	//  2-я пара: 09:45 – 11:15 (перерыв 15 минут)
+	//  3-я пара: 11:45 – 13:15 (перерыв 30 минут)
+	lessonSlots := []struct {
+		hour     int
+		minute   int
+		duration int // длительность в минутах
+	}{
+		{8, 0, 90},   // первая пара
+		{9, 45, 90},  // вторая пара
+		{11, 45, 90}, // третья пара
+	}
+
+	// Диапазон дат (3 месяца начиная с 17 марта 2025)
+	startDate := time.Date(2025, 3, 17, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 3, 0)
+
+	// Справочные данные
+	auditoryOptions := []string{"101", "102", "103", "104", "201", "202"}
+	lessonTypes := []string{"Лекция", "Практика", "Лабораторная", "Семинар"}
+
+	// Карты для отслеживания занятости:
+	// - scheduledGroups: "groupName|время" → bool
+	// - scheduledTeachers: "teacherRegCode|время" → bool
+	scheduledGroups := make(map[string]bool)
+	scheduledTeachers := make(map[string]bool)
+
+	for teacherRegCode, assignments := range teacherSchedules {
+		if len(assignments) == 0 {
+			continue
 		}
 
-		// Группируем связи по группам, чтобы ограничить количество занятий в день
-		groupSchedules := make(map[string][]struct {
-			teacherRegCode string
-			courseID       int64
-		})
-		for _, tcg := range teacherCourseGroups {
-			groupSchedules[tcg.groupName] = append(groupSchedules[tcg.groupName], struct {
-				teacherRegCode string
-				courseID       int64
-			}{tcg.teacherRegCode, tcg.courseID})
-		}
+		// Перебираем дни в заданном диапазоне
+		for day := startDate; day.Before(endDate); day = day.AddDate(0, 0, 1) {
+			// Пропускаем выходные (суббота и воскресенье)
+			if day.Weekday() == time.Saturday || day.Weekday() == time.Sunday {
+				continue
+			}
 
-		// Доступные временные слоты в день (например, 9:00, 11:00, 13:00, 15:00)
-		timeSlots := []int{9, 11, 13, 15}
+			// Для каждого фиксированного временного слота
+			for _, slot := range lessonSlots {
+				lessonStart := time.Date(day.Year(), day.Month(), day.Day(), slot.hour, slot.minute, 0, 0, time.UTC)
+				utcTime := lessonStart.UTC().Format(time.RFC3339)
 
-		// Дополнительные данные для расписания
-		auditoryOptions := []string{"101", "102", "103", "104", "201", "202"}
-		lessonTypes := []string{"Лекция", "Практика", "Лабораторная", "Семинар"}
-		// Варианты длительностей занятий (в минутах)
-		lessonDurations := []int{60, 90, 120}
+				// Перемешиваем назначения, чтобы распределение было случайным
+				rand.Shuffle(len(assignments), func(i, j int) {
+					assignments[i], assignments[j] = assignments[j], assignments[i]
+				})
 
-		// Генерация расписания на 3 недели, 4 рабочих дня в неделю, 3–4 занятия в день
-		startDate := time.Date(2025, 3, 17, 0, 0, 0, 0, time.UTC) // Начало с понедельника
+				slotAssigned := false
+				for _, assignment := range assignments {
+					keyGroup := fmt.Sprintf("%s|%s", assignment.groupName, utcTime)
+					keyTeacher := fmt.Sprintf("%s|%s", teacherRegCode, utcTime)
 
-		for groupName, tcgs := range groupSchedules {
-			for week := 0; week < 3; week++ {
-				for day := 0; day < 4; day++ { // Пн–Чт
-					// Случайно выбираем 3–4 занятия из доступных для группы
-					classesPerDay := rand.Intn(2) + 3 // 3–4 занятия в день
-					if classesPerDay > len(tcgs) {
-						classesPerDay = len(tcgs) // Не можем выбрать больше, чем есть связей
-					}
-
-					// Перемешиваем список связей, чтобы выбрать случайные занятия
-					shuffledTcgs := make([]struct {
-						teacherRegCode string
-						courseID       int64
-					}, len(tcgs))
-					copy(shuffledTcgs, tcgs)
-					rand.Shuffle(len(shuffledTcgs), func(i, j int) {
-						shuffledTcgs[i], shuffledTcgs[j] = shuffledTcgs[j], shuffledTcgs[i]
-					})
-
-					// Выбираем случайные временные слоты без пересечений
-					usedSlots := make(map[int]bool)
-					for i := 0; i < classesPerDay; i++ {
-						// Если все слоты заняты, прерываем
-						if len(usedSlots) >= len(timeSlots) {
-							break
-						}
-
-						// Выбираем случайный незанятый слот
-						var slot int
-						for {
-							slot = timeSlots[rand.Intn(len(timeSlots))]
-							if !usedSlots[slot] {
-								usedSlots[slot] = true
-								break
-							}
-						}
-
-						// Время начала занятия
-						scheduleTime := startDate.AddDate(0, 0, week*7+day).Add(time.Duration(slot) * time.Hour)
-						description := fmt.Sprintf("Занятие по курсу для группы %s", groupName)
+					if !scheduledGroups[keyGroup] && !scheduledTeachers[keyTeacher] {
+						description := fmt.Sprintf("Занятие по курсу для группы %s", assignment.groupName)
 						auditory := auditoryOptions[rand.Intn(len(auditoryOptions))]
 						lessonType := lessonTypes[rand.Intn(len(lessonTypes))]
-						duration := lessonDurations[rand.Intn(len(lessonDurations))] // Выбираем случайную длительность
 
 						_, err := DB.Exec(`
-                            INSERT INTO schedules (course_id, group_name, teacher_reg_code, schedule_time, description, auditory, lesson_type, duration)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        `,
-							shuffledTcgs[i].courseID,
-							groupName,
-							shuffledTcgs[i].teacherRegCode,
-							scheduleTime.Format(time.RFC3339),
+							INSERT INTO schedules (course_id, group_name, teacher_reg_code, schedule_time, description, auditory, lesson_type, duration)
+							VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+						`,
+							assignment.courseID,
+							assignment.groupName,
+							teacherRegCode,
+							utcTime,
 							description,
 							auditory,
 							lessonType,
-							duration,
+							slot.duration,
 						)
 						if err != nil {
 							log.Panicf("Ошибка вставки расписания: %v", err)
 						}
+
+						// Помечаем, что группа и преподаватель заняты в этот момент
+						scheduledGroups[keyGroup] = true
+						scheduledTeachers[keyTeacher] = true
+
+						slotAssigned = true
+						break
 					}
+				}
+
+				if !slotAssigned {
+					log.Printf("Слот %s (преподаватель %s) остался свободным — нет доступных групп или возникло пересечение.",
+						lessonStart.Format("2006-01-02 15:04"), teacherRegCode)
 				}
 			}
 		}
-		log.Println("Дефолтное расписание добавлено в таблицу schedules.")
 	}
+
+	log.Println("Генерация расписания завершена. Дубликаты отсутствуют.")
 }
 
 // Генерация материалов
-// Функция для генерации материалов
-
-// Функция для генерации материалов
 func seedMaterials() {
 	var count int
 	err := DB.QueryRow(`SELECT COUNT(*) FROM materials`).Scan(&count)
@@ -454,10 +457,10 @@ func seedMaterials() {
 		// Возможные типы материалов
 		materialTypes := []string{
 			"Лекция",
-			"Практическое задание",
-			"Лабораторная работа",
+			"Практика",
+			"Лабораторка",
 			"Тест",
-			"Дополнительный материал",
+			"Доп. материал",
 		}
 
 		// Генерация одного материала для каждого курса и группы
@@ -468,14 +471,13 @@ func seedMaterials() {
 			description := fmt.Sprintf("Описание материала для группы %s", cg.groupName)
 			fileURL := fmt.Sprintf("https://example.com/materials/%d/%s", cg.courseID, title)
 
-			// Вставляем один материал в таблицу materials, включая teacher_reg_code
 			_, err := DB.Exec(`
                 INSERT INTO materials (course_id, group_name, teacher_reg_code, title, description, file_url)
                 VALUES (?, ?, ?, ?, ?, ?)
             `, cg.courseID, cg.groupName, cg.teacherRegCode, title, description, fileURL)
 			if err != nil {
 				log.Printf("Ошибка вставки материала для курса %d и группы %s: %v", cg.courseID, cg.groupName, err)
-				continue // Пропускаем ошибку и продолжаем вставку других материалов
+				continue
 			}
 		}
 

@@ -126,11 +126,7 @@ func sendMainMenu(chatID int64, bot *tgbotapi.BotAPI, user *models.User) {
 			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("📋 Мои предметы и группы", "menu_teacher_courses"),
 			))
-			// Существующие кнопки для преподавателя
-			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("🛠 Изменить расписание", "menu_edit_schedule"),
-				tgbotapi.NewInlineKeyboardButtonData("🛠 Изменить материалы", "menu_edit_materials"),
-			))
+
 		}
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🚪 Выход", "menu_logout"),
@@ -284,6 +280,9 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		return
 	}
 
+	// Удаляем обработку навигации по месяцам
+	// НЕ НУЖНО: Обработка навигации по месяцам
+
 	if data == "week_today" {
 		bot.Request(tgbotapi.NewCallback(callback.ID, "Переход к текущей неделе"))
 		now := time.Now()
@@ -296,47 +295,57 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		return
 	}
 	if data == "mode_day" {
-		// Показываем расписание на сегодня
-		err := ShowScheduleDay(chatID, bot, user, time.Now())
+		now := time.Now()
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Переход к дневному режиму"))
+		// Используем новую улучшенную версию
+		err := ShowEnhancedScheduleDay(chatID, bot, user, now)
 		if err != nil {
-			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка отображения расписания"))
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка отображения дневного расписания"))
 		}
 		return
 	} else if data == "mode_week" {
-		// Вычисляем начало недели (например, понедельник)
 		now := time.Now()
 		offset := int(now.Weekday())
 		if offset == 0 {
 			offset = 7
 		}
 		weekStart := now.AddDate(0, 0, -(offset - 1))
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Переход к недельному режиму"))
 		err := ShowScheduleWeek(chatID, bot, user, weekStart)
 		if err != nil {
-			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка отображения расписания"))
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка отображения недельного расписания"))
 		}
 		return
 	} else if data == "mode_month" {
-		// Здесь можно реализовать ShowScheduleMonth, если понадобится
-		bot.Request(tgbotapi.NewCallback(callback.ID, "Режим 'Месяц' ещё не реализован"))
+		// Сохраняем этот обработчик, но меняем его поведение
+		bot.Request(tgbotapi.NewCallback(callback.ID, "Режим 'Месяц' больше не поддерживается"))
 		return
 	}
 	// В начале ProcessCallback, после получения user
+	// Обработка таймлайна
 	if data == "show_timeline" {
-		// Пример: если минимальный таймлайн показывается для текущего дня,
-		// можно задать список слотов и карту событий
-		slots := []string{"08:00", "10:00", "12:00", "14:00", "16:00", "18:00"}
-		events := map[string]string{
-			"08:00": "Математика (Иванов)",
-			"10:00": "Физика (Петров)",
-			"12:00": "Практика (Сидоров)",
-			"14:00": "Лабораторная (Кузнецов)",
-			// Можно не задавать событие для остальных слотов
+		now := time.Now()
+		dayStart := now.Truncate(24 * time.Hour)
+		dayEnd := dayStart.Add(24*time.Hour - time.Second)
+
+		var schedules []models.Schedule
+		if user.Role == "teacher" {
+			schedules, err = GetSchedulesForTeacherByDateRange(user.RegistrationCode, dayStart, dayEnd)
+		} else {
+			schedules, err = GetSchedulesForGroupByDateRange(user.Group, dayStart, dayEnd)
 		}
-		timelineText := BuildMinimalTimeline(slots, time.Now(), events)
+		if err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка загрузки расписания"))
+			return
+		}
+
+		timelineText := BuildCalendarTimeline(schedules, now)
 		msg := tgbotapi.NewMessage(chatID, timelineText)
 		msg.ParseMode = "HTML"
 		if err := sendAndTrackMessage(bot, msg); err != nil {
 			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка отображения таймлайна"))
+		} else {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Таймлайн загружен"))
 		}
 		return
 	}
@@ -350,7 +359,8 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 			return
 		}
 		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
-		ShowScheduleDay(chatID, bot, user, selectedDay)
+		// Используем новую улучшенную версию вместо старой
+		ShowEnhancedScheduleDay(chatID, bot, user, selectedDay)
 		return
 	}
 
@@ -410,18 +420,11 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 
 	case "menu_schedule":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "🗓 Расписание"))
-		user, _ := auth.GetUserByTelegramID(chatID)
-		now := time.Now()
-		offset := int(now.Weekday())
-		if offset == 0 {
-			offset = 7
-		}
-		weekStart := now.AddDate(0, 0, -(offset - 1))
-		if err := ShowScheduleWeek(chatID, bot, user, weekStart); err != nil {
-			fmt.Println("Ошибка при отправке расписания:", err)
+		err := ShowScheduleModeMenu(chatID, bot)
+		if err != nil {
+			fmt.Println("Ошибка при отправке меню выбора режима расписания:", err)
 		}
 		return
-
 	case "menu_materials":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "📚 Материалы"))
 		user, _ := auth.GetUserByTelegramID(chatID)
@@ -429,7 +432,6 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 			fmt.Println("Ошибка при отправке материалов:", err)
 		}
 		return
-
 	case "menu_logout":
 		user, err := auth.GetUserByTelegramID(chatID)
 		if err != nil || user == nil {
@@ -446,7 +448,6 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		// Показываем главное меню без авторизации
 		sendMainMenu(chatID, bot, nil)
 		return
-
 	case "menu_help":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "❓ Справка"))
 		msg := tgbotapi.NewMessage(chatID,

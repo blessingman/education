@@ -4,6 +4,8 @@ import (
 	"education/internal/db"
 	"education/internal/models"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -108,43 +110,36 @@ func GetSchedulesByGroup(group string) ([]models.Schedule, error) {
 // BuildWeekNavigationKeyboardFiltered строит клавиатуру недели, отображая кнопки только для дней, где есть события.
 // Если в день нет событий, кнопка выводится с префиксом "❌" и callback_data="ignore".
 func BuildWeekNavigationKeyboardFiltered(weekStart time.Time, schedules []models.Schedule) tgbotapi.InlineKeyboardMarkup {
-	// Определяем множество дат, в которых есть занятия
 	eventDays := make(map[string]bool)
 	for _, s := range schedules {
-		dayStr := s.ScheduleTime.Format("2006-01-02")
-		eventDays[dayStr] = true
+		eventDays[s.ScheduleTime.Format("02.01")] = true
 	}
 
-	// Дата предыдущей и следующей недели
 	prevWeek := weekStart.AddDate(0, 0, -7)
 	nextWeek := weekStart.AddDate(0, 0, 7)
-
-	// Кнопки "⬅️ -1 нед" и "+1 нед ➡️"
-	navRow := tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("⬅️ -1 нед", fmt.Sprintf("week_prev_%s", prevWeek.Format("2006-01-02"))),
-		tgbotapi.NewInlineKeyboardButtonData("+1 нед ➡️", fmt.Sprintf("week_next_%s", nextWeek.Format("2006-01-02"))),
-	)
-
-	// Сокращённые названия дней: Пн, Вт, Ср, Чт, Пт, Сб, Вс
-	dayNames := []string{"П", "В", "С", "Ч", "П", "С", "В"}
 
 	var dayRow []tgbotapi.InlineKeyboardButton
 	for i := 0; i < 7; i++ {
 		day := weekStart.AddDate(0, 0, i)
-		dayStr := day.Format("2006-01-02")
-
-		// Если есть занятия – обычная кнопка, иначе "❌"
-		if eventDays[dayStr] {
-			dayLabel := fmt.Sprintf("%s %s", dayNames[i], day.Format("02"))
-			dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(dayLabel, fmt.Sprintf("day_%s", dayStr)))
-		} else {
-			dayLabel := fmt.Sprintf("❌%s", dayNames[i])
-			dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(dayLabel, "ignore"))
+		dayStr := day.Format("02.01")
+		label := dayStr
+		if !eventDays[dayStr] {
+			label = "—" + dayStr
 		}
+		dayRow = append(dayRow, tgbotapi.NewInlineKeyboardButtonData(
+			label,
+			fmt.Sprintf("day_%s", day.Format("2006-01-02")),
+		))
 	}
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(navRow, dayRow)
-	return keyboard
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◄", fmt.Sprintf("week_prev_%s", prevWeek.Format("2006-01-02"))),
+			tgbotapi.NewInlineKeyboardButtonData("Сегодня", "week_today"),
+			tgbotapi.NewInlineKeyboardButtonData("►", fmt.Sprintf("week_next_%s", nextWeek.Format("2006-01-02"))),
+		),
+		dayRow,
+	)
 }
 
 func BuildWeekNavigationKeyboardFilteredWithFilter(weekStart time.Time, schedules []models.Schedule) tgbotapi.InlineKeyboardMarkup {
@@ -166,7 +161,7 @@ func ShowScheduleModeMenu(chatID int64, bot *tgbotapi.BotAPI) error {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("День", "mode_day"),
 			tgbotapi.NewInlineKeyboardButtonData("Неделя", "mode_week"),
-			tgbotapi.NewInlineKeyboardButtonData("Месяц", "mode_month"),
+			// Удаляем опцию "Месяц"
 		),
 	)
 	msg := tgbotapi.NewMessage(chatID, "Выберите режим отображения расписания:")
@@ -175,82 +170,73 @@ func ShowScheduleModeMenu(chatID int64, bot *tgbotapi.BotAPI) error {
 	return sendAndTrackMessage(bot, msg)
 }
 
-func BuildMinimalTimeline(slots []string, currentTime time.Time, events map[string]string) string {
-	// slots – временные метки, например: ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"]
-	// events – карта: ключ – временная метка (например, "08:00"), значение – название события (например, "Математика (Иванов)")
-	// currentTime – текущее время
-
-	// Первая строка: временные метки
-	timeline := "⏰ "
-	for _, slot := range slots {
-		timeline += fmt.Sprintf("%-12s", slot)
+// Улучшенная версия BuildCalendarTimeline
+func BuildCalendarTimeline(schedules []models.Schedule, day time.Time) string {
+	if len(schedules) == 0 {
+		return fmt.Sprintf("📆 <b>%s</b>\n\n🔍 <i>Нет занятий на этот день</i>",
+			day.Format("02.01.2006")+" ("+weekdayName(day.Weekday())+")")
 	}
 
-	// Вторая строка: линия с квадратными метками
-	line := ""
-	// Заполняем каждый слот линией: если в слоте есть событие – обычный квадрат, если это текущий интервал – выделенный квадрат.
-	for i, slot := range slots {
-		// Определяем, попадает ли текущее время в интервал между данным слотом и следующим
-		var marker string
-		// Если в данный слот есть событие (в events) — ставим квадрат,
-		// иначе выводим разделительную линию.
-		if _, ok := events[slot]; ok {
-			marker = "🔲"
-		} else {
-			marker = "────────────"
-		}
+	// Сортируем занятия по времени
+	sort.Slice(schedules, func(i, j int) bool {
+		return schedules[i].ScheduleTime.Before(schedules[j].ScheduleTime)
+	})
 
-		// Если есть следующий слот, проверяем, находится ли текущее время в интервале.
-		if i < len(slots)-1 {
-			t1, err1 := time.Parse("15:04", slot)
-			t2, err2 := time.Parse("15:04", slots[i+1])
-			if err1 == nil && err2 == nil {
-				// Прикрепляем текущую дату к слоту
-				t1 = time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), t1.Hour(), t1.Minute(), 0, 0, currentTime.Location())
-				t2 = time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), t2.Hour(), t2.Minute(), 0, 0, currentTime.Location())
-				if currentTime.After(t1) && currentTime.Before(t2) {
-					marker = "🔳"
-				}
-			}
-		}
-		line += fmt.Sprintf("%-12s", marker)
-	}
+	var sb strings.Builder
+	// Заголовок с датой и днем недели
+	sb.WriteString(fmt.Sprintf("📆 <b>%s</b>\n\n",
+		day.Format("02.01.2006")+" ("+weekdayName(day.Weekday())+")"))
 
-	// Третья строка: события (если есть)
-	eventsLine := ""
-	for _, slot := range slots {
-		if ev, ok := events[slot]; ok {
-			eventsLine += fmt.Sprintf("%-12s", ev)
-		} else {
-			eventsLine += fmt.Sprintf("%-12s", "")
-		}
-	}
+	// Сначала фильтруем только расписание для указанного дня
+	dayStart := day.Truncate(24 * time.Hour)
+	dayEnd := dayStart.Add(24 * time.Hour)
 
-	// Определяем, когда начнется следующее занятие
-	var nextSlot string
-	for _, slot := range slots {
-		t, err := time.Parse("15:04", slot)
-		if err != nil {
+	// Разделитель заголовка
+	sb.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+	seen := make(map[string]bool)
+	hasEvents := false
+
+	for _, s := range schedules {
+		// Проверяем, что занятие относится к запрошенному дню
+		if s.ScheduleTime.Before(dayStart) || s.ScheduleTime.After(dayEnd) {
 			continue
 		}
-		t = time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), t.Hour(), t.Minute(), 0, 0, currentTime.Location())
-		if currentTime.Before(t) {
-			nextSlot = slot
-			break
+
+		hasEvents = true
+
+		// Улучшенный ключ для проверки уникальности
+		key := fmt.Sprintf("%s-%d-%s-%s-%s-%s",
+			s.ScheduleTime.Format("15:04"),
+			s.CourseID,
+			s.Description,
+			s.GroupName,
+			s.Auditory,
+			s.LessonType,
+		)
+		if seen[key] {
+			continue
 		}
-	}
-	var remaining string
-	if nextSlot != "" {
-		tNext, _ := time.Parse("15:04", nextSlot)
-		tNext = time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), tNext.Hour(), tNext.Minute(), 0, 0, currentTime.Location())
-		minutesLeft := int(tNext.Sub(currentTime).Minutes())
-		remaining = fmt.Sprintf("Сейчас: %s (до следующего занятия осталось %d мин.)", currentTime.Format("15:04"), minutesLeft)
-	} else {
-		remaining = fmt.Sprintf("Сейчас: %s", currentTime.Format("15:04"))
+		seen[key] = true
+
+		timeStr := s.ScheduleTime.Format("15:04")
+		endTimeStr := s.ScheduleTime.Add(time.Duration(s.Duration) * time.Minute).Format("15:04")
+
+		// Блок информации о занятии
+		sb.WriteString(fmt.Sprintf("⏰ <b>%s - %s</b> (%d мин.)\n", timeStr, endTimeStr, s.Duration))
+		sb.WriteString(fmt.Sprintf("📚 <b>%s</b>\n", s.Description))
+		sb.WriteString(fmt.Sprintf("👨‍🏫 Преподаватель: %s\n", s.TeacherRegCode))
+		sb.WriteString(fmt.Sprintf("👥 Группа: %s\n", s.GroupName))
+		sb.WriteString(fmt.Sprintf("🚪 Аудитория: %s\n", s.Auditory))
+		sb.WriteString(fmt.Sprintf("📝 Тип: %s\n", s.LessonType))
+		sb.WriteString("\n")
 	}
 
-	result := timeline + "\n" + line + "\n" + eventsLine + "\n\n" + remaining
-	return result
+	if !hasEvents {
+		sb.WriteString("🔍 <i>Нет занятий на этот день</i>\n")
+	}
+
+	return sb.String()
 }
 
 // weekdayName возвращает название дня недели на русском языке.
