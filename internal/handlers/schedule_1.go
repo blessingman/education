@@ -232,7 +232,8 @@ func FormatSchedulesByWeek(
 	return msg.String()
 }
 
-// Короткие названия дней недели
+// weekdayShortName returns the short name for a weekday.
+// Currently not used but kept for potential future use.
 func weekdayShortName(wd time.Weekday) string {
 	names := []string{"Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"}
 	return names[wd]

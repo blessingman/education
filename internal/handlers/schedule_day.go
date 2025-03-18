@@ -41,9 +41,8 @@ func ShowEnhancedScheduleDay(chatID int64, bot *tgbotapi.BotAPI, user *models.Us
 
 	var allRows [][]tgbotapi.InlineKeyboardButton
 	allRows = append(allRows, navRow)
-	for _, row := range keyboard.InlineKeyboard {
-		allRows = append(allRows, row)
-	}
+	allRows = append(allRows, keyboard.InlineKeyboard...)
+
 	enhancedKeyboard := tgbotapi.NewInlineKeyboardMarkup(allRows...)
 
 	msg := tgbotapi.NewMessage(chatID, text)

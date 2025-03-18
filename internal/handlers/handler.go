@@ -250,6 +250,11 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		return
 	}
 
+	// Проверяем, не является ли callback связанным с материалами
+	if user != nil && ProcessMaterialsCallback(callback, bot, user) {
+		return
+	}
+
 	// Обработка пагинации расписания
 	// Обработка навигации по неделям
 	// Обработка навигации по неделям
@@ -428,6 +433,13 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 	case "menu_materials":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "📚 Материалы"))
 		user, _ := auth.GetUserByTelegramID(chatID)
+
+		// Сбрасываем состояние пагинации материалов при первом входе
+		materialStateMutex.Lock()
+		materialPageState[chatID] = 1       // Начинаем с первой страницы
+		delete(materialFilterState, chatID) // Сбрасываем фильтр
+		materialStateMutex.Unlock()
+
 		if err := ShowMaterials(chatID, bot, user); err != nil {
 			fmt.Println("Ошибка при отправке материалов:", err)
 		}
