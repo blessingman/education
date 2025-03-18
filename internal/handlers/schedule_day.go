@@ -26,22 +26,36 @@ func ShowEnhancedScheduleDay(chatID int64, bot *tgbotapi.BotAPI, user *models.Us
 		return err
 	}
 
-	text := FormatEnhancedDaySchedule(schedules, day, user.Role)
-	keyboard := BuildModeSwitchKeyboard("mode_day")
+	// Применяем фильтры к полученному расписанию
+	filter := GetUserFilter(chatID)
+	filteredSchedules := ApplyFilters(schedules, filter)
+
+	text := FormatEnhancedDaySchedule(filteredSchedules, day, user.Role)
 
 	// Add navigation buttons for previous/next day
 	prevDay := day.AddDate(0, 0, -1)
 	nextDay := day.AddDate(0, 0, 1)
 
+	// Создаем навигационные кнопки
 	navRow := tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData("◀️ Пред. день", fmt.Sprintf("day_%s", prevDay.Format("2006-01-02"))),
 		tgbotapi.NewInlineKeyboardButtonData("Сегодня", "mode_day"),
 		tgbotapi.NewInlineKeyboardButtonData("След. день ▶️", fmt.Sprintf("day_%s", nextDay.Format("2006-01-02"))),
 	)
 
+	// Получаем базовую клавиатуру переключения режимов
+	modeKeyboard := BuildModeSwitchKeyboard("mode_day")
+
+	// Добавляем кнопку фильтров
+	filterRow := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🔍 Фильтры", "filter_course_menu"),
+	)
+
+	// Объединяем все ряды кнопок
 	var allRows [][]tgbotapi.InlineKeyboardButton
 	allRows = append(allRows, navRow)
-	allRows = append(allRows, keyboard.InlineKeyboard...)
+	allRows = append(allRows, modeKeyboard.InlineKeyboard...)
+	allRows = append(allRows, filterRow)
 
 	enhancedKeyboard := tgbotapi.NewInlineKeyboardMarkup(allRows...)
 

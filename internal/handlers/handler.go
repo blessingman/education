@@ -255,6 +255,77 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		return
 	}
 
+	// Проверяем, не является ли callback связанным с фильтрами расписания
+	if strings.HasPrefix(data, "filter_") {
+		if data == "filter_course_menu" {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Выбор курса для фильтра"))
+			ShowCourseFilterMenu(chatID, bot)
+			return
+		} else if data == "filter_lesson_type_menu" {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Выбор типа занятия для фильтра"))
+			ShowLessonTypeFilterMenu(chatID, bot)
+			return
+		} else if data == "filter_reset_all" {
+			ResetUserFilters(chatID)
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Фильтры сброшены"))
+			ShowFilterMenu(chatID, bot)
+			return
+		} else if data == "filter_course_reset" {
+			filter := GetUserFilter(chatID)
+			filter.CourseID = 0
+			filter.CourseName = ""
+			SetUserFilter(chatID, filter)
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Фильтр по курсу сброшен"))
+			ShowFilterMenu(chatID, bot)
+			return
+		} else if data == "filter_lesson_type_reset" {
+			filter := GetUserFilter(chatID)
+			filter.LessonType = ""
+			SetUserFilter(chatID, filter)
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Фильтр по типу занятия сброшен"))
+			ShowFilterMenu(chatID, bot)
+			return
+		} else if data == "filter_menu" {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Возврат к меню фильтров"))
+			ShowFilterMenu(chatID, bot)
+			return
+		} else if data == "filter_apply" {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Применение фильтров"))
+			// Получаем текущую дату
+			now := time.Now()
+			offset := int(now.Weekday())
+			if offset == 0 {
+				offset = 7
+			}
+			weekStart := now.AddDate(0, 0, -(offset - 1))
+			ShowScheduleWeek(chatID, bot, user, weekStart)
+			return
+		} else if strings.HasPrefix(data, "filter_course_") && !strings.HasPrefix(data, "filter_course_menu") && !strings.HasPrefix(data, "filter_course_reset") {
+			// Формат: filter_course_ID_NAME
+			parts := strings.SplitN(strings.TrimPrefix(data, "filter_course_"), "_", 2)
+			if len(parts) == 2 {
+				courseID := parts[0]
+				courseName := parts[1]
+
+				filter := GetUserFilter(chatID)
+				filter.CourseID = parseID(courseID) // Добавим функцию для конвертации строки в int64
+				filter.CourseName = courseName
+				SetUserFilter(chatID, filter)
+				bot.Request(tgbotapi.NewCallback(callback.ID, "Выбран курс: "+courseName))
+				ShowFilterMenu(chatID, bot)
+				return
+			}
+		} else if strings.HasPrefix(data, "filter_lesson_type_") && !strings.HasPrefix(data, "filter_lesson_type_menu") && !strings.HasPrefix(data, "filter_lesson_type_reset") {
+			lessonType := strings.TrimPrefix(data, "filter_lesson_type_")
+			filter := GetUserFilter(chatID)
+			filter.LessonType = lessonType
+			SetUserFilter(chatID, filter)
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Выбран тип занятия: "+lessonType))
+			ShowFilterMenu(chatID, bot)
+			return
+		}
+	}
+
 	// Обработка пагинации расписания
 	// Обработка навигации по неделям
 	// Обработка навигации по неделям
@@ -425,10 +496,18 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 
 	case "menu_schedule":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "🗓 Расписание"))
-		err := ShowScheduleModeMenu(chatID, bot)
-		if err != nil {
-			fmt.Println("Ошибка при отправке меню выбора режима расписания:", err)
-		}
+		// Добавим кнопку фильтров в меню выбора режима
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("День", "mode_day"),
+				tgbotapi.NewInlineKeyboardButtonData("Неделя", "mode_week"),
+				tgbotapi.NewInlineKeyboardButtonData("🔍 Фильтры", "filter_course_menu"),
+			),
+		)
+		msg := tgbotapi.NewMessage(chatID, "Выберите режим отображения расписания или настройте фильтры:")
+		msg.ParseMode = "HTML"
+		msg.ReplyMarkup = keyboard
+		sendAndTrackMessage(bot, msg)
 		return
 	case "menu_materials":
 		bot.Request(tgbotapi.NewCallback(callback.ID, "📚 Материалы"))
@@ -541,4 +620,53 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 
 	// Если callback не относится к главному меню, передаём обработку регистрации/логина
 	RegistrationProcessCallback(callback, bot)
+}
+
+// Функция для отображения меню выбора курса
+func ShowCourseFilterMenu(chatID int64, bot *tgbotapi.BotAPI) {
+	// Получаем список курсов из базы данных
+	courses, err := GetAllCourses()
+	if err != nil {
+		fmt.Println("Ошибка получения списка курсов:", err)
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при загрузке списка курсов")
+		sendAndTrackMessage(bot, msg)
+		return
+	}
+
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	// Если список курсов пуст, сообщаем об этом
+	if len(courses) == 0 {
+		msg := tgbotapi.NewMessage(chatID, "В базе данных не найдены курсы")
+		sendAndTrackMessage(bot, msg)
+		return
+	}
+
+	// Создаем кнопки для каждого курса из базы данных
+	for _, course := range courses {
+		courseID := fmt.Sprintf("%d", course.ID)
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(course.Name, "filter_course_"+courseID+"_"+course.Name),
+		))
+	}
+
+	// Добавляем кнопку для сброса фильтра и возврата
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("❌ Сбросить фильтр курса", "filter_course_reset"),
+	))
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("◀️ Назад к фильтрам", "filter_menu"),
+	))
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
+	msg := tgbotapi.NewMessage(chatID, "Выберите курс для фильтрации:")
+	msg.ReplyMarkup = keyboard
+	sendAndTrackMessage(bot, msg)
+}
+
+// Вспомогательная функция для конвертации строкового ID в int64
+func parseID(idStr string) int64 {
+	var id int64
+	fmt.Sscanf(idStr, "%d", &id)
+	return id
 }

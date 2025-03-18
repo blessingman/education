@@ -27,7 +27,11 @@ func ShowScheduleWeek(chatID int64, bot *tgbotapi.BotAPI, user *models.User, wee
 		return err
 	}
 
-	text := FormatSchedulesByWeek(schedules, weekStart, weekEnd, user.Role, user)
+	// Применяем фильтры к полученному расписанию
+	filter := GetUserFilter(chatID)
+	filteredSchedules := ApplyFilters(schedules, filter)
+
+	text := FormatSchedulesByWeek(filteredSchedules, weekStart, weekEnd, user.Role, user)
 	// Создаём базовую клавиатуру
 	baseRows := [][]tgbotapi.InlineKeyboardButton{
 		{
@@ -51,32 +55,7 @@ func ShowScheduleWeek(chatID int64, bot *tgbotapi.BotAPI, user *models.User, wee
 	return sendAndTrackMessage(bot, msg)
 }
 
-// ShowScheduleDay выводит расписание за конкретный день.
-// Принимает chatID, bot, пользователя и выбранный день (time.Time).
-func ShowScheduleDay(chatID int64, bot *tgbotapi.BotAPI, user *models.User, day time.Time) error {
-	dayStart := day.Truncate(24 * time.Hour)
-	dayEnd := dayStart.Add(24*time.Hour - time.Second)
-
-	var schedules []models.Schedule
-	var err error
-	if user.Role == "teacher" {
-		schedules, err = GetSchedulesForTeacherByDateRange(user.RegistrationCode, dayStart, dayEnd)
-	} else {
-		schedules, err = GetSchedulesForGroupByDateRange(user.Group, dayStart, dayEnd)
-	}
-	if err != nil {
-		return err
-	}
-
-	// Передаём именно выбранный день, а не time.Now()
-	text := BuildCalendarTimeline(schedules, day)
-	keyboard := BuildModeSwitchKeyboard("mode_day")
-
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = "HTML"
-	msg.ReplyMarkup = keyboard
-	return sendAndTrackMessage(bot, msg)
-}
+// УДАЛЯЕМ дублирующую функцию ShowEnhancedScheduleDay, она уже определена в schedule_day.go
 
 func GetSchedulesForTeacherByDateRange(teacherRegCode string, start, end time.Time) ([]models.Schedule, error) {
 	query := `
@@ -230,11 +209,4 @@ func FormatSchedulesByWeek(
 	}
 
 	return msg.String()
-}
-
-// weekdayShortName returns the short name for a weekday.
-// Currently not used but kept for potential future use.
-func weekdayShortName(wd time.Weekday) string {
-	names := []string{"Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"}
-	return names[wd]
 }

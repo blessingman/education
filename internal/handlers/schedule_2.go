@@ -163,6 +163,10 @@ func ShowScheduleModeMenu(chatID int64, bot *tgbotapi.BotAPI) error {
 			tgbotapi.NewInlineKeyboardButtonData("Неделя", "mode_week"),
 			// Удаляем опцию "Месяц"
 		),
+		// Добавляем строку с кнопкой фильтров
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔍 Фильтры", "filter_course_menu"),
+		),
 	)
 	msg := tgbotapi.NewMessage(chatID, "Выберите режим отображения расписания:")
 	msg.ParseMode = "HTML"

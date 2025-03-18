@@ -427,14 +427,17 @@ func ShowMaterialFilters(chatID int64, bot *tgbotapi.BotAPI, user *models.User) 
 	if user.Role == "teacher" {
 		// Для преподавателя - его курсы
 		courses, err = GetCoursesByTeacherRegCode(user.RegistrationCode)
+		if err != nil {
+			msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("⚠️ Ошибка при получении курсов: %s", err.Error()))
+			return sendAndTrackMessage(bot, msg)
+		}
 	} else {
 		// Для студента - курсы его группы
 		courses, err = GetCoursesForGroup(user.Group)
-	}
-
-	if err != nil {
-		msg := tgbotapi.NewMessage(chatID, "⚠️ Ошибка при получении списка курсов.")
-		return sendAndTrackMessage(bot, msg)
+		if err != nil {
+			msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("⚠️ Ошибка при получении курсов: %s", err.Error()))
+			return sendAndTrackMessage(bot, msg)
+		}
 	}
 
 	if len(courses) == 0 {
