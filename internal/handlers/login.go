@@ -2,27 +2,14 @@ package handlers
 
 import (
 	"fmt"
+	"strings"
 
 	"education/internal/auth"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// processLoginMessage обрабатывает этапы логина:
-/*
-   1) Пользователь ввёл код → LoginStateWaitingForRegCode
-   2) Пользователь ввёл пароль → LoginStateWaitingForPassword
-*/
-// processLoginMessage обрабатывает этапы логина:
-/*
-   1) Пользователь ввёл код → LoginStateWaitingForRegCode
-   2) Пользователь ввёл пароль → LoginStateWaitingForPassword
-*/
-// processLoginMessage обрабатывает этапы логина:
-/*
-   1) Пользователь ввёл код → LoginStateWaitingForRegCode
-   2) Пользователь ввёл пароль → LoginStateWaitingForPassword
-*/
+// Remove duplicated comments
 func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, text string) {
 	chatID := update.Message.Chat.ID
 
@@ -33,8 +20,18 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 		loginTempDataMap[chatID] = ld
 	}
 
+	// Trim spaces from input
+	text = strings.TrimSpace(text)
+
 	switch state {
 	case LoginStateWaitingForRegCode:
+		// Validate registration code format (more flexible to accept both student and teacher codes)
+		if !strings.HasPrefix(text, "ST-") && !strings.HasPrefix(text, "TH-") {
+			msg := tgbotapi.NewMessage(chatID, "❌ Некорректный формат кода. Примеры: ST-4056, TR-1203")
+			sendAndTrackMessage(bot, msg)
+			return
+		}
+
 		// Пользователь вводит код (например, ST-456)
 		ld.RegCode = text
 		loginStates[chatID] = LoginStateWaitingForPassword
@@ -63,6 +60,13 @@ func processLoginMessage(update *tgbotapi.Update, bot *tgbotapi.BotAPI, state, t
 		// Сверяем пароль
 		if user.Password != text {
 			msg := tgbotapi.NewMessage(chatID, "❌ Неверный пароль. Попробуйте ещё раз.")
+			sendAndTrackMessage(bot, msg)
+			return
+		}
+
+		// Проверяем, не авторизован ли уже пользователь в другом чате
+		if user.TelegramID != 0 && user.TelegramID != chatID {
+			msg := tgbotapi.NewMessage(chatID, "⚠️ Этот аккаунт уже авторизован в другом чате.")
 			sendAndTrackMessage(bot, msg)
 			return
 		}

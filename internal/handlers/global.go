@@ -1,5 +1,7 @@
 package handlers
 
+import "sync"
+
 const (
 	StateWaitingForRole     = "waiting_for_role" // Новое состояние для выбора роли
 	StateWaitingForFaculty  = "waiting_for_faculty"
@@ -29,6 +31,25 @@ type tempUserData struct {
 type loginData struct {
 	RegCode string
 	MsgIDs  []int // Список MessageID для удаления сообщений
+}
+
+// StateManager manages all the state data with mutex protection
+type StateManager struct {
+	mu            sync.RWMutex
+	userStates    map[int64]string
+	tempUserData  map[int64]*tempUserData
+	loginStates   map[int64]string
+	loginTempData map[int64]*loginData
+}
+
+// NewStateManager creates a new initialized state manager
+func NewStateManager() *StateManager {
+	return &StateManager{
+		userStates:    make(map[int64]string),
+		tempUserData:  make(map[int64]*tempUserData),
+		loginStates:   make(map[int64]string),
+		loginTempData: make(map[int64]*loginData),
+	}
 }
 
 // userStates и прочие переменные для хранения состояний

@@ -564,7 +564,7 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 			return
 		}
 
-		// Используем registration_code для получения данных
+		// Получаем курсы и группы преподавателя
 		courses, err := GetCoursesByTeacherRegCode(user.RegistrationCode)
 		if err != nil {
 			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка получения курсов"))
@@ -576,23 +576,23 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 			return
 		}
 
-		// Группируем группы по идентификатору курса
+		// Группируем группы по курсам
 		courseGroups := make(map[int64][]string)
 		for _, g := range groups {
 			courseGroups[g.CourseID] = append(courseGroups[g.CourseID], g.GroupName)
 		}
 
-		// Формирование текстового сообщения
-		var msgText string
+		// Формируем текстовое сообщение с использованием strings.Builder
+		var builder strings.Builder
 		for _, course := range courses {
-			groupsForCourse := courseGroups[course.ID]
-			if len(groupsForCourse) == 0 {
-				msgText += fmt.Sprintf("📘 %s: нет групп\n", course.Name)
+			if groupsForCourse, ok := courseGroups[course.ID]; !ok || len(groupsForCourse) == 0 {
+				builder.WriteString(fmt.Sprintf("📘 %s: нет групп\n", course.Name))
 			} else {
-				msgText += fmt.Sprintf("📘 %s: %s\n", course.Name, strings.Join(groupsForCourse, ", "))
+				builder.WriteString(fmt.Sprintf("📘 %s: %s\n", course.Name, strings.Join(groupsForCourse, ", ")))
 			}
 		}
-		if msgText == "" {
+		msgText := builder.String()
+		if strings.TrimSpace(msgText) == "" {
 			msgText = "Нет данных для отображения."
 		}
 

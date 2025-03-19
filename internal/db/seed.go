@@ -132,16 +132,19 @@ func seedStudents() {
 		}
 
 		// Генерация 60 студентов (по 10 на каждую группу)
+		studentCounter := 1 // Счетчик для уникального идентификатора
 		for _, fg := range facultyGroups {
 			for i := 0; i < 10; i++ {
 				name := fmt.Sprintf("%s %s", firstNames[rand.Intn(len(firstNames))], lastNames[rand.Intn(len(lastNames))])
+				registrationCode := fmt.Sprintf("ST-%04d", studentCounter) // Формат ST-0000
 				_, err := DB.Exec(`
 					INSERT INTO users (telegram_id, role, name, faculty, group_name, password, registration_code)
 					VALUES (?, ?, ?, ?, ?, ?, ?)
-				`, rand.Int63(), "student", name, fg.faculty, fg.groupName, "", fmt.Sprintf("ST-%s-%d", fg.groupName, i+1))
+				`, rand.Int63(), "student", name, fg.faculty, fg.groupName, "", registrationCode)
 				if err != nil {
 					log.Panicf("Ошибка вставки студента: %v", err)
 				}
+				studentCounter++ // Увеличиваем счетчик
 			}
 		}
 		log.Println("Дефолтные студенты добавлены в таблицу users.")
@@ -157,16 +160,19 @@ func seedTeachers() {
 	}
 	if count == 0 {
 		// Генерация 3 преподавателей на факультет
-		for fIdx, faculty := range faculties {
+		teacherCounter := 1 // Счетчик для уникального идентификатора
+		for _, faculty := range faculties {
 			for tIdx := 0; tIdx < 3; tIdx++ {
 				name := fmt.Sprintf("%s %s", firstNames[rand.Intn(len(firstNames))], lastNames[rand.Intn(len(lastNames))])
+				registrationCode := fmt.Sprintf("TH-%04d", teacherCounter) // Формат TH-0000
 				_, err := DB.Exec(`
 					INSERT INTO users (telegram_id, role, name, faculty, group_name, password, registration_code)
 					VALUES (?, ?, ?, ?, ?, ?, ?)
-				`, rand.Int63(), "teacher", name, faculty, "", "", fmt.Sprintf("TR-%d-%d", fIdx+1, tIdx+1))
+				`, rand.Int63(), "teacher", name, faculty, "", "", registrationCode)
 				if err != nil {
 					log.Panicf("Ошибка вставки преподавателя: %v", err)
 				}
+				teacherCounter++ // Увеличиваем счетчик
 			}
 		}
 		log.Println("Дефолтные преподаватели добавлены в таблицу users.")
