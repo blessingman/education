@@ -557,6 +557,8 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		sendAndTrackMessage(bot, msg)
 		return
 	case "menu_teacher_courses":
+		// Answer callback immediately to stop the looping animation
+		bot.Request(tgbotapi.NewCallback(callback.ID, ""))
 		// Получаем пользователя по chatID
 		user, err := auth.GetUserByTelegramID(chatID)
 		if err != nil || user == nil || user.Role != "teacher" {
@@ -590,6 +592,7 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 			} else {
 				builder.WriteString(fmt.Sprintf("📘 %s: %s\n", course.Name, strings.Join(groupsForCourse, ", ")))
 			}
+			// Добавляем информацию о ближайших событиях (пока как заглушку)
 		}
 		msgText := builder.String()
 		if strings.TrimSpace(msgText) == "" {
