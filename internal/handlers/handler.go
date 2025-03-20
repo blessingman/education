@@ -371,10 +371,14 @@ func ProcessCallback(callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
 		return
 	}
 	if data == "mode_day" {
-		now := time.Now()
 		bot.Request(tgbotapi.NewCallback(callback.ID, "Переход к дневному режиму"))
 		// Используем новую улучшенную версию
-		err := ShowEnhancedScheduleDay(chatID, bot, user, now)
+		selectedDay, err := time.Parse("2006-01-02", time.Now().Format("2006-01-02"))
+		if err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка обработки даты"))
+			return
+		}
+		err = ShowEnhancedScheduleDay(chatID, bot, user, selectedDay)
 		if err != nil {
 			bot.Request(tgbotapi.NewCallback(callback.ID, "Ошибка отображения дневного расписания"))
 		}
